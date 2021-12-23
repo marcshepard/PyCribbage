@@ -1,9 +1,10 @@
 """
-Cribbage.py - Classes for Cribbage engine and console interface
+Cribbage.py - Classes for the Cribbage engine
 """
 
+from abc import abstractmethod
+from enum import IntEnum
 import Cards
-import math
 
 """
 Hand - a cribbage hand
@@ -67,13 +68,13 @@ class Hand:
         return s.rstrip()
 
 """
-Discards - the discard pile for the current hand
+Discards - the cribbage discard pile
 
 Properties:
 * current_pile - the current pile of discards, which has total value <= 31
 * older_discards - discards that happened before the last time all players had to "go"
 
-Method:
+Methods:
 add_card; add a card to the discard pile
 start_new_pile; called after all players do a "go"
 __str__; show the pile
@@ -82,14 +83,15 @@ class Discards:
     def __init__(self):
         self._current_pile = []
         self._older_discards = []
-        self.sum = 0
-
-    def __str__(self):
-        return _rank_short_names[self._rank - 1] + _suit_short_names[self._suit]
+        self._sum = 0
 
     @property
     def current_pile(self):
         return tuple(self._current_pile)
+
+    @property
+    def sum (self):
+        return self._sum;
 
     @property
     def older_discards(self):
@@ -98,93 +100,155 @@ class Discards:
     def add_card (self, card):
         if type(card) is not Cards.Card:
             raise ValueError ("card must be of type Card")
-        if card.rank + self.sum > 31
+        if card.rank + self.sum > 31:
             raise ValueError ("Can't exceed 31 points on the discard pile")
         self._current_pile.append(card)
+        self._sum += card.rank
 
     def start_new_pile (self):
-        self.sum = 0
-        self._older_discards.append(self._current_pile)
+        self._sum = 0
+        self._older_discards += self._current_pile
         self._current_pile = []
 
     def __str__(self):
-        s = "Current pile: "
+        s = "Current discard pile: "
         for card in self._current_pile:
             s += str(card) + " "
         if len(self._older_discards) > 0:
-            s += "\nOlder discards: "
+            s += "\t\tOlder discards: "
             for card in self._older_discards:
                 s += str(card) + " "
         return s.rstrip()
 
+import CribbagePlayer
 
-"""
-Player # Default player is interactive player
-* name
-* type (Enum)   # Current user, computer
-* ix1, ix2 select_lay_aways (Hand hand)
-* card_ix select_play(Game game, Hand hand)
+class Game:
+    def __init__(self, players):
+        self._players = players
+        self._scores = [0, 0]
 
-Game
-* Player[] players
-* Hand[] hands
-* int[] scores
-* Card starter
-* Discards discards
-* Deck _deck
-* int _whose_turn  # Whose turn is it for the current hand?
-* int _whose_deal  # Whose deal is it?
-* __init__(Player[] players):
-    * create new deck, shuffle
-    * cut for deal, set whose_deal (-1 from who wins the cut)
-* deal():
-    * whose_deal += 1 % num_players
-    * whose_turn = whose_deal + 1 % num_players
-    * Reset players hands, crib, discard piles
-    * Create new deck and shuffle it
-    * deal hands
-    * whose_turn gets to cut the deck
-    * select starter card
-* create_crib():
-    * each player selects 2 cards to transfer to the crib
-        * option to get recommended_crib_discard - returns array of (card[], min, max, expected) value of discards, sorted by expected
-    * next player cuts deck, starter card drawn, his heals scored
-        might generate game_over event
-* play():
-    * if the person whose turn it is has >= 121, no-op
-    * else, the person whose turn it is makes a play; either select a card to discard or say "go" (engine provides allowed options)
-        * option to get recommended_play - returns array of (card[], min, max, expected) value of discards, sorted by expected
-        * if go and no one else can go, then last_pegger gets a point and create new discard pile, and turn = last_pegger + 1
-        * if card is played, update score (any of these might generate game_over event)
-            * update player score for n-of-a-kind or runs
-            * update player score for 15 or 31
-            * update score for last card if this was the final card in all hands. If so, then score_hands()
-            * update player score for last card if no one else can play
-* score_hand(player_number):
-    * score the players hand - default just auto-score; ideally config option to allow for manual score and also for muggins
-    * if player_number = -1, score the whose_deal player crib
-* score_hands():
-    * for each player, starting at whose_deal + 1, score_hand(player_number)
-    * score_hand (-1) to score the crib
+    # Generate an event for a player, increasing that players score by points
+    def _event (self, player_ix, points, message):
+        for i in range (0, 3):
+            self._players[i].get_event(player_ix == i, points, message)
 
+    # Create a new game, printe welcome message, cut for who goes first
+    def _cut_for_deal (self):
+        self._deck = Cards.Deck()
+        self._deck.shuffle()
+        draw_cards = [self._deck.draw(), self._deck.draw()]
+        while draw_cards[0].rank == draw_cards[1].rank:
+            draw_cards = [self._deck.draw(), self._deck.draw()]
+        if draw_cards[0].rank < draw_cards[1].rank:
+            self._whose_deal = 0
+            self._whose_turn = 1
+        else:
+            self._whose_deal = 1
+            self._whose_turn = 0
+        for i in range(0, 2):
+            self._players[i].new_game_welcome(self._players[1-i].name)
+            self._players[i].cut_for_deal(draw_cards[i], draw_cards[1-i])
 
-Session:
-* __init__:
-    * Get user sign-in info
-    * create Player for signed-in user
-* Player
-* GameResults[] history
-* GameResultsStatistics statistics
-* run():
-    * If no signed-in user, provide option to sign-in
-    * If signed in, provide options to:
-        * Play new game (against the computer, one level)
-        * View history
-        * View statistics
-        * Edit profile
-        * quit
+    # Deal cards, create crib, draw starter card
+    def _deal(self):
+        deck = Cards.Deck()
+        deck.shuffle()
+        cards = [[],[]]
+        for i in range(0, 6):
+            cards[0].append(deck.draw())
+            cards[1].append(deck.draw())
+        self._deck = deck
+        self._hands = [Hand(cards[0]), Hand(cards[1])]
+        self._starter_card = deck.draw()
+        self._discard = Discards()
 
-Main code:
-* Create Session
-* Session.run
-"""
+    # Create the crib
+    def _create_crib(self):
+        crib = []
+        for i in range(0, 2):
+            card1_ix, card2_ix = self._players[i].select_lay_aways(self._hands[i])
+            card1, card2 = self._hands[i].lay_away(card1_ix, card2_ix)
+            crib.append(card1)
+            crib.append(card2)
+        self._crib = crib
+
+    # Draw starter card
+    def _draw_starter_card(self):
+        self._starter_card = self._deck.draw()
+        for i in range(0, 2):
+            self._players[i].draw_starter(self._starter_card, self._whose_turn == i)
+        if self._starter_card.rank == 11:
+            self._event(self._whose_deal, 2, "His Heels")
+
+    # Is the game over (someone scored 121)?
+    @property
+    def game_over(self):
+        return self._scores[0] >= 121 or self._scores[1] >= 121
+
+    # Is the round over (all hands have been played)?
+    @property
+    def round_over(self):
+        return len(self._hands[0].unplayed_cards) == 0 and len(self._hands[1].unplayed_cards) == 0
+
+    # Can player_ix play?
+    def _can_play(self, player_ix):
+        if len(self._hands[player_ix].unplayed_cards) > 0 and self._hands[player_ix].unplayed_cards[0].rank + self._discard.sum() <= 31:
+            return True
+        return False
+
+    # Can anyone play?
+    def _can_anyone_play(self):
+        for i in range (0, 2):
+            if self._can_play(i):
+                return True
+        return False
+
+    # Let the whose_turn player make a pegging play
+    def _pegging_play (self):
+        player = self._players[self._whose_turn]
+        card_ix = player.select_play(self._hands[self._whose_turn], self._starter_card, self._discard)
+
+        # If they can play, see if it scores points and recard they were the last to play
+        if card_ix != -1:
+            card = self._hands[self._whose_turn].play(card_ix)
+            self._discard.add_card (card)
+            score = 0   # TODO - figure out the score properly
+            self._event (self._whose_turn, score, "Played the " + str(card))
+            self._last_played = self._whose_turn
+            return
+
+        # If they can't play ("go"), but were the last to play, then they get a point for last card and we start a new discard pile
+        assert not self._can_play(self._whose_turn), "Player said go, but had a play"
+        if self._last_played == self._whose_turn:
+            self._event (self._whose_turn, 1, "Last card")
+            self._discard.start_new_pile()
+            return
+
+        # Else it's just a normal go, and someone else will play
+        self._event (self._whose_turn, 0, "Go")
+
+    # Score all the hands and the crib at the end of each round
+    def _score_hands (self):
+        pass
+
+    # The main game loop
+    def play(self):
+        self._cut_for_deal()
+        while not self.game_over:
+            self._deal()
+            self._create_crib()
+            self._draw_starter_card()
+            while not self.game_over and not self.round_over:
+                self._pegging_play()
+                self._whose_turn = 1 - self._whose_turn
+            if not self.game_over:
+                self._score_hands()
+            self._whose_deal = 1 - self._whose_deal
+    
+while True:
+    # Create a new game, which includes initial cut to see who goes first
+    game = Game([CribbagePlayer.ComputerPlayer(), CribbagePlayer.ConsolePlayer()])
+    game.play()
+    print ()
+    if input ("Type e to exit, anything else to play a new game: ") == "e":
+        break

@@ -46,3 +46,19 @@ for i in range (1, 5):
     assert len(hand.unplayed_cards) == 4-i, "Hand.play: should remove a card from the unplayed list"
 trace (hand)
 
+# Verify we can create a discard pile
+deck = Cards.Deck()
+deck.shuffle()
+discards = Cribbage.Discards()
+for i in range (3):
+    discards.add_card (deck.draw())
+assert len(discards.current_pile) == 3, "Discards.add_card() should add cards"
+trace (discards)
+discards.start_new_pile()
+assert len(discards.current_pile) == 0, "Discards.start_new_pile() should reset the current pile"
+assert len(discards.older_discards) == 3, "Discards.start_new_pile() should append to older_discards"
+for i in range (2):
+    discards.add_card (deck.draw())
+trace (discards)
+discards.start_new_pile()
+assert len(discards.older_discards) == 5, "Discards.start_new_pile() should append to older_discards"

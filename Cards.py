@@ -53,5 +53,5 @@ class Deck:
         return self._cards.pop(0)
 
     def cut(self):
-        """""" # No op for now (not really needed)
+        pass    # No op for now (not really needed, might add later)
 
