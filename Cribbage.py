@@ -6,98 +6,84 @@ from abc import abstractmethod
 from enum import Enum, auto
 from typing import List, Tuple, get_origin
 import Cards
-
-def card_points (card):
-    return card.rank if card.rank < 9 else 10
+from math import comb
 
 """
-Hand - a cribbage hand
+Player - a cribbage player
 """
-class Hand:
-    def __init__ (self, cards : Cards.Hand):
-        assert len(cards) == 6, "cards must be a list of 6 Cards" 
-        self.unplayed_cards = cards
-        self.unplayed_cards.sort()
-        self.played_cards = Cards.Hand()
-
-    # discard two cards for the crib
-    def lay_away (self, card1 : str, card2 : str) -> Tuple:
-        assert len(self.unplayed_cards) == 6, "lay_away can only be called once"
-        hand = self.unplayed_cards
-        if card1 == card2 or not hand.find_card(card1) or not hand.find_card(card2):
-            return None
-        return hand.remove_card(card1), hand.remove_card(card2)
-
-    # After lay_away, you can play a card for pegging
-    def play(self, card : str) -> Cards.Card:
-        assert len(self.unplayed_cards) + len(self.played_cards) == 4, "You must lay_away cards to the crib before you can play your hand"
-        if not self.unplayed_cards.find_card(card):
-            return None
-        card = self.unplayed_cards.remove_card(card)
-        self.played_cards.add_card(card)
-        return card
-
-    def __iter__(self):
-        return self.unplayed_cards.__iter__()
-
-    def __getitem__(self, key):
-        return self.unplayed_cards[key]
-
-    def __len__(self):
-        return len(self.unplayed_cards)
-
-    # Friendly version of the hand
-    def __str__(self):
-        return str(self.unplayed_cards)
-
-"""
-Discards - the cribbage discard pile(s)
-"""
-class Discards:
-    def __init__(self):
-        self.current_pile = Cards.Hand()
-        self.older_discards = Cards.Hand()
-        self.sum = 0
-
-    # Add a card to the discard pile
-    def add_card (self, card : Cards.Card) -> None:
-        points = card_points(card)
-        if points + self.sum > 31:
-            raise ValueError ("Can't exceed 31 points on the discard pile")
-        self.current_pile.add_card(card)
-        self.sum += points
-
-    # Start a new pile by moving cards on teh current pile to older discards
-    def start_new_pile (self) -> None:
-        self.sum = 0
-        while len(self.current_pile) > 0:
-            card = self.current_pile.remove_card(str(self.current_pile[0]))
-            self.older_discards.add_card(card)
-
-    def __str__(self):
-        s = "Current discard pile: " + str(self.current_pile)
-        if len(self.older_discards) > 0:
-            s += "\t\tOlder discards: " + str(self.older_discards)
-        return s
-
-"""
-Player - abstract base class for a cribbage player
-"""
-class Player(Cards.Player):
-    def __init__(self):
-        super().__init__()
+class Player:
+    def __init__ (self):
+        self.name = ""
+        self.hand : Cards.Hand = None
+        self.score = 0
 
     @abstractmethod
     def select_lay_aways(self) -> Tuple:
         pass
 
     @abstractmethod
-    def select_play(self, starter : Cards.Card, discards : Discards) -> Cards.Card:
+    def select_play(self, starter : Cards.Card, discards : Cards.Discards) -> Cards.Card:
         pass
 
     @abstractmethod
     def notify(self, notification) -> None:
         pass
+
+"""
+Players - an ordered collection of Player objects
+
+Includes method to set/rotate dealers, and set/rotate whose turn it is to play within a deal
+The first turn after the deal is the player right after the dealer
+"""
+class Players:
+    def __init__ (self, players : list[Player]):
+        if len(players) < 2:
+            raise ValueError ("players list must have at least 2 elements")
+        self._players = players
+        self.set_dealer(players[0])
+
+    @property
+    def dealer(self) -> Player:
+        return self._players[self._whose_deal]
+
+    @property
+    def turn(self) -> Player:
+        return self._players[self._whose_turn]
+
+    def rotate_turn(self) -> None:
+        self._whose_turn += 1
+        self._whose_turn %= len(self._players)
+    
+    def rotate_dealer(self) -> None:
+        next_dealer = self._players[(self._whose_turn + 1) % len(self._players)]
+        self.set_dealer (next_dealer)
+
+    def set_dealer(self, player : Player) -> None:
+        for i in range (len(self._players)):
+            if self._players[i] == player:
+                self._whose_deal = i
+                self._whose_turn = (self._whose_deal + 1) % len(self._players)
+                return
+        raise ValueError("Player not found")
+
+    def next_player (self, player : Player) -> Player:
+        for i in range (len(self._players)):
+            if self._players[i] == player:
+                return self._players[(i + 1) % len(self._players)]
+        raise ValueError("Player not found")
+
+    def __len__ (self):
+        return len(self._players)
+    
+    def __str__(self):
+        s = ""
+        for player in self._players:
+            s += player.name + ", "
+        return s.rstrip(", ")
+
+    def __iter__(self):
+        return self._players.__iter__()
+
 
 # Type of notification; each type carries different data
 class NotificationType(Enum):
@@ -113,7 +99,7 @@ class NotificationType(Enum):
     GAME_OVER    = auto()   # The game has ended
 
 class Notification:
-    def __init__(self, type: NotificationType, player : Cards.Player, points : int, data : str = None):
+    def __init__(self, type: NotificationType, player : Player, points : int, data = None):
         self.type = type
         self.player = player
         self.points = points
@@ -127,7 +113,10 @@ class Notification:
         if self.type == NotificationType.FIRST_DEALER:
             return self.player.name + " will deal first"
         elif self.type == NotificationType.DEAL:
-            return "\n" + self.player.name + " dealt the cards"
+            s = "\n" + self.player.name + " dealt the cards\nScore: "
+            for player in self.data:
+                s += player.name + " " + str(player.score) + "\t\t"
+            return s
         elif self.type == NotificationType.STARTER_CARD:
             return self.player.name + " cut the starter card " + self.data
         elif self.type == NotificationType.PLAY:
@@ -145,8 +134,8 @@ class Notification:
 
 # Game - a nice game of cribbage
 class Game:
-    def __init__(self, players : List[Cards.Players]):
-        self.players = Cards.Players(players)
+    def __init__(self, players : List[Players]):
+        self.players = Players(players)
 
     # A helper method to notify all players when something happens
     def notify_all(self, notification : Notification) -> None:
@@ -175,12 +164,12 @@ class Game:
     @property
     def can_anyone_go(self) -> bool:
         for player in self.players:
-            if len(player.hand) > 0 and card_points(player.hand[0]) + self.discards.sum <= 31:
+            if len(player.hand) > 0 and player.hand[0].points + self.discards.sum <= 31:
                 return True
         return False
 
     # Start a new game; that means intros and cut for deal
-    def start_game (self):
+    def start_game (self) -> None:
         # Notify everyone of a new game
         self.notify_all (Notification (NotificationType.NEW_GAME, None, 0, str(self.players) + "\nYou must now cut for deal"))
 
@@ -201,16 +190,18 @@ class Game:
         self.players.set_dealer(dealer)
 
     # Start a new round; deal, create crib, cut starter card 
-    def start_round (self):
+    def start_round (self) -> None:
         # Deal the cards, convert the dealt Cards.hands into Cribbage.Hands and give a hand to each player
         self.deck = Cards.Deck()
         self.deck.shuffle()
-        hands = Cards.deal(self.deck, len(self.players), 6)
-        i = 0
         for player in self.players:
-            player.hand = Hand(hands[i])
-            i += 1
-        self.notify_all(Notification(NotificationType.DEAL, self.players.dealer, 0))
+            player.hand = Cards.Hand()
+        for i in range (6):
+            for player in self.players:
+                player.hand.add_card(self.deck.draw())
+        for player in self.players:
+            player.hand.sort()
+        self.notify_all(Notification(NotificationType.DEAL, self.players.dealer, 0, self.players))
 
         # Create the crib by getting lay_away cards from each player
         crib = Cards.Hand()
@@ -230,10 +221,10 @@ class Game:
             self.notify_all(Notification(NotificationType.POINTS, self.players.dealer, 2, "His Heels"))
 
         # Set up the discard pile
-        self.discards = Discards()
+        self.discards = Cards.Discards()
     
     # Let the current player take their turn
-    def take_turn(self):
+    def take_turn(self) -> None:
         player = self.players.turn
 
         # If the player has no cards left to play, then skip their turn
@@ -249,8 +240,8 @@ class Game:
             assert discard_sum != self.discards.sum, "Player didn't put their play card on the discard pile!"
             self.last_to_peg = player
             self.notify_all(Notification(NotificationType.PLAY, self.players.turn, 0, str(card)))
+            self.score_pegging_points()
             if self.discards.sum == 31:
-                self.notify_all(Notification(NotificationType.POINTS, player, 2, "31"))
                 self.discards.start_new_pile()
             return
         
@@ -261,9 +252,142 @@ class Game:
         # If no one else can go, reset the discard pile and give the last pegger credit for last card
         if not self.can_anyone_go:
             self.notify_all(Notification(NotificationType.POINTS, self.last_to_peg, 1, "Last card"))
+            self.last_to_peg.score += 1
             self.discards.start_new_pile()
     
-    def count_hands(self):
+    # Score points for pegging after the current player has discarded
+    def score_pegging_points(self) -> None:
+        player = self.players.turn
+        discards = self.discards
+        card = discards[len(discards) - 1]
+
+        if discards.sum == 31:
+            self.notify_all(Notification(NotificationType.POINTS, player, 2, "31"))
+            player.score += 2
+
+        if discards.sum == 15:
+            self.notify_all(Notification(NotificationType.POINTS, player, 2, "15"))
+            player.score += 2
+
+        in_a_row = 1           # How many cards in a row of the same rank?
+        i = len(discards) - 2
+        while i >= 0:
+            if discards[i].rank == card.rank:
+                in_a_row += 1
+            i -= 1
+        if in_a_row > 1:
+            points = 2 * comb(in_a_row, 2)
+            self.notify_all(Notification(NotificationType.POINTS, player, points, str(in_a_row - 1) + " card pair"))
+            player.score += points
+
+        if len(discards) < 3:
+            return
+
+        for i in range (len(discards) - 2):
+            check_for_run = []
+            for j in range (i, len(discards)):
+                check_for_run.append(discards[j].rank)
+            check_for_run.sort()
+            is_run = True
+            last_card = check_for_run[0]
+            for k in range(1, len(check_for_run)):
+                if check_for_run[k] != last_card + 1:
+                    is_run = False
+                    break
+                last_card = check_for_run[k]
+            if is_run:
+                run_size = len(check_for_run)
+                self.notify_all(Notification(NotificationType.POINTS, player, run_size, "Run of " + str(run_size)))
+                player.score += run_size
+                break
+    
+    def score_hands(self) -> None:
+        starter = self.starter
+        player = self.players.dealer
+        for i in range (len(self.players)):
+            if not self.game_over:
+                player = self.players.next_player(player)
+                self.score_hand(player)
+
+        if not self.game_over:
+            self.score_crib()
+
+    def score_hand(self, player : Player) -> None:
+        starter = self.starter
+        hand = player.hand.played_cards
+
+        # Knobs
+        for card in hand:
+            if card.rank == 11 and card.suit == starter.suit:
+                self.notify_all(Notification(NotificationType.POINTS, player, 1, "Knobs"))
+                player.score += 1
+                if player.score >= 121:
+                    return
+                break
+        
+        # Flush
+        flush_points = 4
+        first_card = hand[0]
+        for card in hand:
+            if card.suit != first_card.suit:
+                flush_points = 0
+                break
+        if flush_points == 4:
+            if starter.suit == card.suit:
+                flush_points == 5
+            self.notify_all(Notification(NotificationType.POINTS, player, flush_points, "Flush"))
+            player.score += flush_points
+            if player.score >= 121:
+                player.score = 121
+                return
+
+        # For pairs and runs, first convert hand + starter to sorted list of card ranks
+        tmp = hand
+        hand = [starter.rank]
+        for card in tmp:
+            hand.append(card.rank)
+        hand.sort()
+
+        # Pairs
+        num_pairs = 0
+        for i in range (len(hand) - 1):
+            j = i + 1
+            while j < len(hand):
+                if hand[i] == hand[j]:
+                    num_pairs += 1
+                    j += 1
+                else:
+                    break
+        if num_pairs > 0:
+            pair_points = 2*num_pairs
+            self.notify_all(Notification(NotificationType.POINTS, player, pair_points, str(num_pairs) + " pair"))
+            player.score += pair_points
+            if player.score >= 121:
+                player.score = 121
+                return
+
+        # Runs
+        while len(hand) >= 3:
+            first_card = hand[0]
+            i = 1
+            while i < len(hand):
+                if hand[i] != hand[0] + i:
+                    break
+                i += 1
+            if i >= 3:
+                run_points = i
+                self.notify_all(Notification(NotificationType.POINTS, player, run_points, "Run of " + str(run_points)))
+                player.score += run_points
+                if player.score >= 121:
+                    player.score = 121
+                    return
+                break
+            else:
+                hand.pop(0)
+
+
+    def score_crib(self) -> None:
+        player = self.players.turn
         pass
 
     # The main loop to play a game
@@ -277,6 +401,7 @@ class Game:
                 self.take_turn()            # Pegging by player whose turn it is
                 self.players.rotate_turn()  # Rotate turns for round
 
-            self.count_hands()              # Count the hands and the crib
+            self.score_hands()              # Count the hands and the crib
             self.players.rotate_dealer()    # Rotate dealer after each round
+
 

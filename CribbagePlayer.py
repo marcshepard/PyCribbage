@@ -15,11 +15,11 @@ class ComputerPlayer(Cribbage.Player):
         self.name = "Computer"
 
     def select_lay_aways(self) -> Tuple:
-        return self.hand.lay_away(str(self.hand[4]), str(self.hand[5]))
+        return self.hand.play_card(str(self.hand[5]), True), self.hand.play_card(str(self.hand[4]), True)
 
     def select_play(self, starter, discards) -> Card:
         hand = self.hand
-        card = hand.play(str(hand[0]))
+        card = hand.play_card(str(hand[0]))
         discards.add_card(card)
         return card
 
@@ -39,14 +39,25 @@ class ConsolePlayer(Cribbage.Player):
         print()
         print ("Your hand: " + str(hand))
         while True:
-            cards = input ("What (comma-separated) cards will you discard? ").split(",")
+            cards = input ("What (comma-separated) cards will you discard? ").replace(" ", "").split(",")
             if len(cards) != 2:
                 print ("You need to type in exactly one comma")
                 continue
-            cards = hand.lay_away(cards[0].strip(), cards[1].strip())
-            if cards is not None:
-                return cards
-            print ("Please select two unique cards that are in your hand")
+            if cards[0] == cards[1]:
+                print ("Cards must be unique")
+                continue
+            cards_found = True
+            for card in cards:
+                if not hand.find_card(card):
+                    print ("Card " + str(card) + " is not one of your cards")
+                    cards_found = False
+            if not cards_found:
+                continue
+
+            selected = []
+            for card in cards:
+                selected.append(hand.play_card(card, True))
+            return selected
 
     def select_play(self, starter, discards):
         hand = self.hand
@@ -56,16 +67,14 @@ class ConsolePlayer(Cribbage.Player):
         print ("Your hand: " + str(hand))
         while True:
             card = input ("What card will you discard? ").strip()
-            card = hand.play(card)
-            if card is None:
+            found = hand.find_card(card)
+            if found is None:
                 print ("Please enter a valid discard")
                 continue
-            adjusted_rank = card.rank if card.rank < 10 else 10
-            if adjusted_rank + discards.sum > 31:
-                print ("Invalid discard; the discard pile must be < 31")
-                hand.unplayed_cards.add_card(card)
-                hand.uplayed_cards.sort()
+            if found.points + discards.sum > 31:
+                print ("Invalid discard; the discard pile total must be <= 31")
                 continue
+            card = hand.play_card(card)
             discards.add_card(card)
             return card 
 

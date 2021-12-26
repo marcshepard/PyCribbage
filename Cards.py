@@ -39,6 +39,10 @@ class Card:
     def rank(self) -> int:
         return self._rank
 
+    @property
+    def points(self) -> int:
+        return self._rank if self._rank < 10 else 10
+
     def __str__(self):
         return Card._rank_short_names[self._rank - 1] + Card._suit_short_names[self._suit]
     
@@ -69,23 +73,25 @@ Hand - a hand of cards (subset of the deck)
 class Hand:
     def __init__ (self):
         self._cards = []
+        self._played_cards = []
 
     def add_card(self, card : Card) -> None:
         return self._cards.append(card)
 
-    def find_card(self, card_name : str) -> bool:
+    def find_card(self, card_or_card_name) -> Card:
         for i in range(len(self._cards)):
-            if str(self._cards[i]) == card_name:
-                return True
-        return False
+            if str(self._cards[i]) == str(card_or_card_name):
+                return self._cards[i]
+        return None
 
-    def remove_card(self, card_name : str) -> Card:
-        if not self.find_card(card_name):
-            return None
+    def play_card(self, card_or_card_name, to_crib : bool = False) -> Card:
         for i in range(len(self._cards)):
-            if str(self._cards[i]) == card_name:
-                return self._cards.pop(i)
-        assert False, "Can't find card to remove even though we checked it was there"
+            if str(self._cards[i]) == str(card_or_card_name):
+                card = self._cards.pop(i)
+                if not to_crib:
+                    self._played_cards.append(card)
+                return card
+        return None
 
     def sort(self) -> None:
         self._cards.sort()
@@ -105,68 +111,46 @@ class Hand:
             s += str(card) + " "
         return s.rstrip()
 
-"""
-Player - a player
-"""
-class Player:
-    def __init__ (self):
-        self.name = ""
-        self.hand = None
-        self.score = 0
-"""
-Players - an ordered collection of Player objects
-
-Includes method to set/rotate dealers, and set/rotate whose turn it is to play within a deal
-The first turn after the deal is the player right after the dealer
-"""
-class Players:
-    def __init__ (self, players : list[Player]):
-        if len(players) < 2:
-            raise ValueError ("players list must have at least 2 elements")
-        self._players = players
-        self.set_dealer(players[0])
-
     @property
-    def dealer(self) -> Player:
-        return self._players[self._whose_deal]
+    def played_cards (self):
+        return self._played_cards
 
-    @property
-    def turn(self) -> Player:
-        return self._players[self._whose_turn]
+"""
+Discards - the cribbage discard pile(s)
+"""
+class Discards:
+    def __init__(self):
+        self._hand = Hand()
+        self.sum = 0
 
-    def rotate_turn(self) -> None:
-        self._whose_turn += 1
-        self._whose_turn %= len(self._players)
-    
-    def rotate_dealer(self) -> None:
-        next_dealer = self._players[(self._whose_turn + 1) % len(self._players)]
-        self.set_dealer (next_dealer)
+    # Add a card to the discard pile
+    def add_card (self, card : Card) -> None:
+        points = card.points
+        if points + self.sum > 31:
+            raise ValueError ("Can't exceed 31 points on the discard pile")
+        self._hand.add_card(card)
+        self.sum += points
 
-    def set_dealer(self, player : Player) -> None:
-        for i in range (len(self._players)):
-            if self._players[i] == player:
-                self._whose_deal = i
-                self._whose_turn = (self._whose_deal + 1) % len(self._players)
-                return
-        raise ValueError("Player not found")
+    # Start a new pile by discarding all the cards on the current pile
+    def start_new_pile (self) -> None:
+        while len(self._hand) > 0:
+            self._hand.play_card(str(self._hand[0]))
+        self.sum = 0
 
-    def __len__ (self):
-        return len(self._players)
-    
+    def __len__(self):
+        return len(self._hand)
+
+    def __getitem__(self, key):
+        return self._hand[key]
+
     def __str__(self):
-        s = ""
-        for player in self._players:
-            s += player.name + ", "
-        return s.rstrip(", ")
+        s = "Current discard pile: " + str(self._hand)
+        if len(self.older_discards) > 0:
+            s += "\t\tOlder discards: "
+            for card in self.older_discards:
+                s += str(card) + " "
+        return s.rstrip()
 
-    def __iter__(self):
-        return self._players.__iter__()
-
-def deal (deck, num_hands : int, num_cards : int) -> list[Hand]:
-    hands = []
-    for i in range (num_hands):
-        hands.append(Hand())
-    for i in range (num_cards):
-        for hand_number in range (num_hands):
-            hands[hand_number].add_card(deck.draw())
-    return hands
+    @property
+    def older_discards(self):
+        return self._hand.played_cards
