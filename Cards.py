@@ -144,7 +144,7 @@ class Discards:
         return self._hand[key]
 
     def __str__(self):
-        s = "Current discard pile: " + str(self._hand)
+        s = "Current discard pile (" + str(self.sum) + "): " + str(self._hand)
         if len(self.older_discards) > 0:
             s += "\t\tOlder discards: "
             for card in self.older_discards:

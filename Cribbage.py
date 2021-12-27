@@ -55,8 +55,10 @@ class Players:
         self._whose_turn %= len(self._players)
     
     def rotate_dealer(self) -> None:
-        next_dealer = self._players[(self._whose_turn + 1) % len(self._players)]
-        self.set_dealer (next_dealer)
+        self._whose_deal += 1
+        self._whose_deal %= len(self._players)
+        self._whose_turn = self._whose_deal + 1
+        self._whose_turn %= len(self._players)
 
     def set_dealer(self, player : Player) -> None:
         for i in range (len(self._players)):
@@ -94,12 +96,13 @@ class NotificationType(Enum):
     STARTER_CARD = auto()   # Starter card selected
     PLAY         = auto()   # A pegging play was made
     GO           = auto()   # Player said "go"
+    SHOW_CARDS   = auto()   # A hand or crib was displayed for scoring
     POINTS       = auto()   # Points were scored
     ROUND_OVER   = auto()   # A round has ended
     GAME_OVER    = auto()   # The game has ended
 
 class Notification:
-    def __init__(self, type: NotificationType, player : Player, points : int, data = None):
+    def __init__(self, type: NotificationType, player : Player, points : int, data : str = None):
         self.type = type
         self.player = player
         self.points = points
@@ -125,8 +128,10 @@ class Notification:
             return self.player.name + " said 'go'"
         elif self.type == NotificationType.POINTS:
             return self.player.name + ": " + self.data + " (+" + str(self.points) + " points)"
+        elif self.type == NotificationType.SHOW_CARDS:
+            return self.player.name + self.data
         elif self.type == NotificationType.ROUND_OVER:
-            return "The round has ended, it's time to cound the hands and the crib"
+            return "\nThe round has ended, it's time to cound the hands and the crib, with starter card " + self.data
         elif self.type == NotificationType.GAME_OVER:
             return "The game has ended, I hope you will play again"
         else:
@@ -243,6 +248,10 @@ class Game:
             self.score_pegging_points()
             if self.discards.sum == 31:
                 self.discards.start_new_pile()
+                return
+            if self.round_over:
+                self.notify_all(Notification(NotificationType.POINTS, self.last_to_peg, 1, "Last card"))
+                self.last_to_peg.score += 1
             return
         
         # Else they have cards, but can't play.
@@ -254,6 +263,8 @@ class Game:
             self.notify_all(Notification(NotificationType.POINTS, self.last_to_peg, 1, "Last card"))
             self.last_to_peg.score += 1
             self.discards.start_new_pile()
+            while self.players.turn != self.last_to_peg:
+                self.players.rotate_turn()
     
     # Score points for pegging after the current player has discarded
     def score_pegging_points(self) -> None:
@@ -274,6 +285,8 @@ class Game:
         while i >= 0:
             if discards[i].rank == card.rank:
                 in_a_row += 1
+            else:
+                break
             i -= 1
         if in_a_row > 1:
             points = 2 * comb(in_a_row, 2)
@@ -302,22 +315,32 @@ class Game:
                 break
     
     def score_hands(self) -> None:
+        self.notify_all(Notification(NotificationType.ROUND_OVER, None, 0, str(self.starter)))
         starter = self.starter
         player = self.players.dealer
         for i in range (len(self.players)):
             if not self.game_over:
                 player = self.players.next_player(player)
-                self.score_hand(player)
+                cards = player.hand.played_cards
+                cards.sort()
+                self.score_cards(player, cards, starter)
 
         if not self.game_over:
-            self.score_crib()
+            self.crib._cards.sort()
+            self.score_cards(player, self.crib._cards, starter, is_crib = True)
 
-    def score_hand(self, player : Player) -> None:
-        starter = self.starter
-        hand = player.hand.played_cards
+    def score_cards(self, player : Player, cards : List[Cards.Card], starter : Cards.Card, is_crib : bool = False) -> None:
+        s = ""
+        if is_crib:
+            s += " crib\t"
+        else:
+            s += " hand\t"
+        for card in cards:
+            s += str(card) + " "
+        self.notify_all(Notification(NotificationType.SHOW_CARDS, player, 0, s))
 
         # Knobs
-        for card in hand:
+        for card in cards:
             if card.rank == 11 and card.suit == starter.suit:
                 self.notify_all(Notification(NotificationType.POINTS, player, 1, "Knobs"))
                 player.score += 1
@@ -326,34 +349,37 @@ class Game:
                 break
         
         # Flush
-        flush_points = 4
-        first_card = hand[0]
-        for card in hand:
+        is_flush = True
+        first_card = cards[0]
+        for card in cards:
             if card.suit != first_card.suit:
-                flush_points = 0
+                is_flush = False
                 break
-        if flush_points == 4:
-            if starter.suit == card.suit:
-                flush_points == 5
+        if is_crib and cards[0].suit != starter.suit:
+            is_flush = False
+        if is_flush:
+            flush_points = 5 if cards[0].suit == starter.suit else 4
             self.notify_all(Notification(NotificationType.POINTS, player, flush_points, "Flush"))
             player.score += flush_points
             if player.score >= 121:
                 player.score = 121
                 return
 
-        # For pairs and runs, first convert hand + starter to sorted list of card ranks
-        tmp = hand
-        hand = [starter.rank]
+        # For pairs, runs and 15s, we don't care about the suit, so convert cards to just an array of int values
+        # For pairs and runs, we need the rank
+        # For 15s, we need the point values
+        tmp = cards
+        cards = [starter.rank]
         for card in tmp:
-            hand.append(card.rank)
-        hand.sort()
+            cards.append(card.rank)
+        cards.sort()
 
         # Pairs
         num_pairs = 0
-        for i in range (len(hand) - 1):
+        for i in range (len(cards) - 1):
             j = i + 1
-            while j < len(hand):
-                if hand[i] == hand[j]:
+            while j < len(cards):
+                if cards[i] == cards[j]:
                     num_pairs += 1
                     j += 1
                 else:
@@ -367,28 +393,81 @@ class Game:
                 return
 
         # Runs
-        while len(hand) >= 3:
-            first_card = hand[0]
-            i = 1
-            while i < len(hand):
-                if hand[i] != hand[0] + i:
+        run_points = Game.run_points (cards)
+        if run_points > 0:
+            self.notify_all(Notification(NotificationType.POINTS, player, run_points, "Run of " + str(run_points)))
+            player.score += run_points
+            if player.score >= 121:
+                player.score = 121
+                return
+
+        # 15s
+        cards = tmp
+        cards = [starter.points]
+        for card in tmp:
+            cards.append(card.points)
+        cards.sort()
+
+        num_15s = Game.counts (15, cards)
+        if num_15s > 0:
+            self.notify_all(Notification(NotificationType.POINTS, player, num_15s*2, "Fifteen " + str(num_15s*2)))
+            player.score += num_15s*2
+            if player.score >= 121:
+                player.score = 121
+                return
+
+
+    # Check for number of run points in a sorted hand
+    def run_points (cards : List[int]) -> int:
+        # Check for runs starting at card i in a sorted list
+        i = 0
+        while i < len(cards):
+            run_len = 1
+            multiplier = 1          # Can be 1, 2, 3, or 4 - depending on pairings in the list
+            paired_card = 0         # First paired card detected (used to compute multiplier)
+
+            first_card = cards[i]
+            last_card = first_card
+            j = i + 1
+            while j < len(cards):
+                if cards[j] > last_card + 1:    # No run starting at index 1, so break
                     break
-                i += 1
-            if i >= 3:
-                run_points = i
-                self.notify_all(Notification(NotificationType.POINTS, player, run_points, "Run of " + str(run_points)))
-                player.score += run_points
-                if player.score >= 121:
-                    player.score = 121
-                    return
-                break
-            else:
-                hand.pop(0)
+                elif cards[j] == last_card + 1: # Might be a run, need to check the next card
+                    last_card = cards[j]
+                    run_len += 1
+                else:                           # Pairs used to calculate multiplier
+                    assert cards[j] == last_card, "The cards are supposed to be sorted"
+                    if paired_card == 0:        # One pair means multiplier = 2
+                        multiplier = 2
+                        paired_card = last_card
+                    elif paired_card == last_card: # Three of a kind means multiplier = 3
+                        multiplier = 3
+                    else:
+                        multiplier = 4          # Two separate pairs means multiplier = 4
+                j += 1
+            
+            if run_len >= 3:
+                return run_len * multiplier
+            i = j
+        return 0
 
-
-    def score_crib(self) -> None:
-        player = self.players.turn
-        pass
+    # Find the number of ways to make "count" points out of the sorted list "cards"
+    def counts (count : int, cards : List[int]) -> int:
+        num_ways = 0
+        for i in range(len(cards)):
+            card = cards[i]
+            if card > count:
+                return num_ways
+            if card == count:
+                num_ways += 1
+                continue
+            if i == len(cards) - 1:
+                continue
+            cards_after = []
+            for j in range (i+1, len(cards)):
+                cards_after.append(cards[j])
+            num_ways += Game.counts (count - card, cards_after)
+        return num_ways
 
     # The main loop to play a game
     def play (self):
@@ -403,5 +482,8 @@ class Game:
 
             self.score_hands()              # Count the hands and the crib
             self.players.rotate_dealer()    # Rotate dealer after each round
+
+        self.notify_all (Notification (NotificationType.GAME_OVER, None, 0, str(self.players) + "\nYou must now cut for deal"))
+
 
 

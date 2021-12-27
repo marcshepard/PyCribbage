@@ -2,7 +2,7 @@
 Player - abstract base class for a cribbage player
 """
 import getpass
-from typing import Tuple
+from typing import List, Tuple
 from Cards import Card
 import Cribbage
 
@@ -33,6 +33,8 @@ class ConsolePlayer(Cribbage.Player):
     def __init__(self):
         super().__init__()
         self.name = getpass.getuser()
+        self.points = 0
+        self.opponent_points = 0
 
     def select_lay_aways(self):
         hand = self.hand
@@ -62,6 +64,7 @@ class ConsolePlayer(Cribbage.Player):
     def select_play(self, starter, discards):
         hand = self.hand
         print()
+        print ("Score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
         print ("Starter card: " + str(starter))
         print (str(discards))
         print ("Your hand: " + str(hand))
@@ -79,6 +82,9 @@ class ConsolePlayer(Cribbage.Player):
             return card 
 
     def notify(self, notification : Cribbage.Notification):
+        if notification.type == Cribbage.NotificationType.PLAY and notification.player != self:
+            print()
+    
         if notification.type == Cribbage.NotificationType.CUT_FOR_DEAL and notification.player == self:
             input ("Type anything to cut for deal: ")
             print ("You cut the " + str(notification.data))
@@ -87,6 +93,27 @@ class ConsolePlayer(Cribbage.Player):
             print ("You cut the " + str(notification.data))
         else:
             print (str(notification).replace(self.name, "You", 1))
+
+        if notification.type == Cribbage.NotificationType.POINTS:
+            if notification.player == self:
+                self.points += notification.points
+            else:
+                self.opponent_points += notification.points
+            if self.show_scores:
+                print ("Score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
+        elif notification.type == Cribbage.NotificationType.NEW_GAME:
+            self.points = 0
+            self.opponent_points = 0
+            self.show_scores = True
+        elif notification.type == Cribbage.NotificationType.GAME_OVER:
+            print ("The game has ended")
+            if self.points > self.opponent_points:
+                print ("You won!")
+            else:
+                print ("You lost")
+            print ("Final score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
+        elif notification.type == Cribbage.NotificationType.ROUND_OVER:
+            self.show_scores = False
 
 while True:
     # Create a new game, which includes initial cut to see who goes first
