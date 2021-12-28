@@ -93,6 +93,12 @@ class Hand:
                 return card
         return None
 
+    def push (self, index : int, card : Card) -> None:
+        self._cards.insert (index, card)
+    
+    def pop (self, index : int) -> Card:
+        return self._cards.pop(index)
+
     def sort(self) -> None:
         self._cards.sort()
 

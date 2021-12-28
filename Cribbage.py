@@ -255,7 +255,7 @@ class Game:
             return
 
         # If they can play, let the player play. Keep track of last_to_peg for last card
-        if self.discards.sum + player.hand[0].rank <= 31:
+        if self.discards.sum + player.hand[0].points <= 31:
             num_cards_to_play = len(player.hand)
             discard_sum = self.discards.sum
             card = player.select_play(self.starter, self.discards)
@@ -343,7 +343,7 @@ class Game:
                 player = self.players.next_player(player)
                 cards = player.hand.played_cards
                 cards.sort()
-                score, reason = Game.score_cards(cards, starter)
+                score, reason = Game.get_hand_value(cards, starter)
                 player.score += score
                 hand_info = "Hand(plus starter) = "
                 for card in cards:
@@ -355,7 +355,7 @@ class Game:
         if not self.game_over:
             assert player == self.players.dealer, "Player should be dealer when scoring the crib"
             self.crib._cards.sort()
-            score, reason = Game.score_cards(self.crib._cards, starter, is_crib = True)
+            score, reason = Game.get_hand_value(self.crib._cards, starter, is_crib = True)
             player.score += score
             hand_info = "Hand(plus starter) = "
             for card in self.crib:
@@ -364,9 +364,9 @@ class Game:
             reason = hand_info + reason
             self.notify_all(Notification(NotificationType.SCORE_CRIB, player, score, reason))
 
-    # Score a hand (4 cards + starter card)
+    # Get the value of a hand (4 cards + starter card)
     # Returns a tuple of score, text describing the score components
-    def score_cards(cards : List[Cards.Card], starter : Cards.Card, is_crib : bool = False) -> Tuple[int, str]:
+    def get_hand_value(cards : List[Cards.Card], starter : Cards.Card, is_crib : bool = False) -> Tuple[int, str]:
         score = 0       # Computed score
         reason = ""     # Computed reason for the score (e.g, fifteen 4, knobs for 1, etc)
 
@@ -400,15 +400,7 @@ class Game:
         cards.sort()
 
         # Pairs
-        num_pairs = 0
-        for i in range (len(cards) - 1):
-            j = i + 1
-            while j < len(cards):
-                if cards[i] == cards[j]:
-                    num_pairs += 1
-                    j += 1
-                else:
-                    break
+        num_pairs = Game.get_pair_count(cards)
         if num_pairs > 0:
             pair_points = 2*num_pairs
             score += pair_points
@@ -427,7 +419,7 @@ class Game:
             reason += str (pair_points) + "\n"
 
         # Runs
-        run_len, multiplier = Game.run_points (cards)
+        run_len, multiplier = Game.get_run_count (cards)
         if run_len > 0:
             score += run_len * multiplier
             if multiplier == 1:
@@ -436,12 +428,8 @@ class Game:
                 reason += str(multiplier) + " runs of "
             reason += str(run_len) + " for " + str (run_len * multiplier) + "\n"
 
-        # 15s - need to first convert cards from "rank" (1-13) to "points" (1-10)
-        for i in range (len(cards)):
-            if cards[i] > 10:
-                cards[i] = 10
-
-        num_15s = Game.counts (15, cards)
+        # 15s
+        num_15s = Game.get_counts (15, cards)
         if num_15s > 0:
             score += num_15s*2
             if num_15s == 1:
@@ -451,8 +439,21 @@ class Game:
 
         return score, reason
 
-    # Check for number of run points in a sorted hand
-    def run_points (cards : List[int]) -> Tuple[int, int]: 
+    # Get the number of pair points in a sorted hand
+    def get_pair_count (cards : List[int]) -> int:
+        num_pairs = 0
+        for i in range (len(cards) - 1):
+            j = i + 1
+            while j < len(cards):
+                if cards[i] == cards[j]:
+                    num_pairs += 1
+                    j += 1
+                else:
+                    break
+        return num_pairs
+
+    # Get the number of run points in a sorted hand
+    def get_run_count (cards : List[int]) -> Tuple[int, int]: 
         # Check for runs starting at card i in a sorted list
         i = 0
         while i < len(cards):
@@ -485,11 +486,11 @@ class Game:
             i = j
         return 0, 0
 
-    # Find the number of ways to make "count" points out of the sorted list "cards"
-    def counts (count : int, cards : List[int]) -> int:
+    # Get the number of ways to make "count" points out of the sorted list "cards"
+    def get_counts (count : int, cards : List[int]) -> int:
         num_ways = 0
         for i in range(len(cards)):
-            card = cards[i]
+            card = cards[i] if cards[i] < 10 else 10
             if card > count:
                 return num_ways
             if card == count:
@@ -500,7 +501,7 @@ class Game:
             cards_after = []
             for j in range (i+1, len(cards)):
                 cards_after.append(cards[j])
-            num_ways += Game.counts (count - card, cards_after)
+            num_ways += Game.get_counts (count - card, cards_after)
         return num_ways
     
     # Calculate the pegging points that would be scored placing a given card on the discard pile
