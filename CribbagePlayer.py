@@ -3,18 +3,21 @@ Player - abstract base class for a cribbage player
 """
 import getpass
 from typing import List, Tuple
-from Cards import Card
+from Cards import Card, Discards, Hand, Suit
 import Cribbage
 
 """
-ComputerPlayer - the automated computer opponent
+EasyComputerPlayer - the easy automated computer opponent
+
+Always discards it's highest cards to the crib
+Always plays it's lowest card while pegging
 """
-class ComputerPlayer(Cribbage.Player):
+class EasyComputerPlayer(Cribbage.Player):
     def __init__(self):
         super().__init__()
-        self.name = "Computer"
+        self.name = "Easy"
 
-    def select_lay_aways(self) -> Tuple:
+    def select_lay_aways(self, your_crib : bool) -> Tuple[Card, Card]:
         return self.hand.play_card(str(self.hand[5]), True), self.hand.play_card(str(self.hand[4]), True)
 
     def select_play(self, starter, discards) -> Card:
@@ -23,7 +26,44 @@ class ComputerPlayer(Cribbage.Player):
         discards.add_card(card)
         return card
 
-    def notify(self, notification : Cribbage.Notification):
+    def notify(self, notification : Cribbage.Notification) -> None:
+        pass
+
+"""
+MediumComputerPlayer - a more typical automated computer opponent
+
+Discards to the crib keeping the cards with the highest net points (card points +/- discard points)
+Plays the card that will score the highest. If a tie, play the highest allowed card
+"""
+class StandardComputerPlayer(Cribbage.Player):
+    def __init__(self):
+        super().__init__()
+        self.name = "Standard"
+
+    def select_lay_aways(self, your_crib : bool) -> Tuple[Card, Card]:
+        # TODO - implement algo to keep the cards with the highest net point value
+        return self.hand.play_card(str(self.hand[5]), True), self.hand.play_card(str(self.hand[4]), True)
+
+    def select_play(self, starter : Card, discards : Discards) -> Card:
+        hand = self.hand
+        points_per_card = [-1]*len(hand)
+        max_points = 0
+        for i in range(len(hand) - 1, -1, -1):
+            if discards.sum + hand[i].points > 31:
+                points_per_card[i] = -1
+                continue
+            points_per_card[i] = Cribbage.Game.calculate_pegging_points(hand[i].rank, discards)
+            if points_per_card[i] > max_points:
+                max_points = points_per_card[i]
+
+        for i in range(len(hand) - 1, -1, -1):
+            if points_per_card[i] == max_points:
+                card = hand.play_card(str(hand[i]))
+                discards.add_card(card)
+                return card
+        assert False, "Couldn't select a card to play"
+
+    def notify(self, notification : Cribbage.Notification) -> None:
         pass
 
 """
@@ -33,15 +73,17 @@ class ConsolePlayer(Cribbage.Player):
     def __init__(self):
         super().__init__()
         self.name = getpass.getuser()
-        self.points = 0
-        self.opponent_points = 0
+        self.opponent_score = 0
 
-    def select_lay_aways(self):
+    def select_lay_aways(self, your_crib : bool):
         hand = self.hand
         print()
         print ("Your hand: " + str(hand))
         while True:
-            cards = input ("What (comma-separated) cards will you discard? ").replace(" ", "").split(",")
+            question = "What (comma-separated) cards will you discard to your crib?"
+            if not your_crib:
+                question = "What (comma-separated) cards will you discard to your opponents crib?"
+            cards = input (question).replace(" ", "").split(",")
             if len(cards) != 2:
                 print ("You need to type in exactly one comma")
                 continue
@@ -64,7 +106,7 @@ class ConsolePlayer(Cribbage.Player):
     def select_play(self, starter, discards):
         hand = self.hand
         print()
-        print ("Score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
+        print ("Score: You " + str(self.score) + "\t\tOpponent " + str(self.opponent_score))
         print ("Starter card: " + str(starter))
         print (str(discards))
         print ("Your hand: " + str(hand))
@@ -94,31 +136,34 @@ class ConsolePlayer(Cribbage.Player):
         else:
             print (str(notification).replace(self.name, "You", 1))
 
-        if notification.type == Cribbage.NotificationType.POINTS:
-            if notification.player == self:
-                self.points += notification.points
-            else:
-                self.opponent_points += notification.points
-            if self.show_scores:
-                print ("Score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
+        if notification.type in [Cribbage.NotificationType.POINTS, Cribbage.NotificationType.SCORE_HAND, Cribbage.NotificationType.SCORE_CRIB]:
+            if notification.player != self:
+                self.opponent_score += notification.points
         elif notification.type == Cribbage.NotificationType.NEW_GAME:
-            self.points = 0
-            self.opponent_points = 0
-            self.show_scores = True
-        elif notification.type == Cribbage.NotificationType.GAME_OVER:
-            print ("The game has ended")
-            if self.points > self.opponent_points:
-                print ("You won!")
-            else:
-                print ("You lost")
-            print ("Final score: You " + str(self.points) + "\t\tOpponent " + str(self.opponent_points))
-        elif notification.type == Cribbage.NotificationType.ROUND_OVER:
-            self.show_scores = False
+            self.opponent_score = 0
 
+
+player0 = EasyComputerPlayer()
+player1 = StandardComputerPlayer()
+max_games = 10
+player0_wins = 0
+player1_wins = 0
+print ("A match to " + str(max_games) + " between " + player0.name + " and " + str (player1.name))
 while True:
-    # Create a new game, which includes initial cut to see who goes first
-    game = Cribbage.Game([ComputerPlayer(), ConsolePlayer()])
+    # Play a game
+    game = Cribbage.Game([player0, player1])
     game.play()
-    print ()
-    if input ("Type e to exit, anything else to play a new game: ") == "e":
+
+    # Print the winner and score
+    if player0.score > player1.score:
+        player0_wins += 1
+        print (player0.name + " won " + str(player0.score) + " to " + str(player1.score))
+    else:
+        player1_wins += 1
+        print (player1.name + " won " + str(player1.score) + " to " + str(player0.score))
+    print ("Score: " + player0.name + " " + str(player0_wins) + "\t\t" + player1.name + " " + str(player1_wins) + "\n")
+
+    if player0_wins + player1_wins > max_games:
         break
+
+print ("Match over")

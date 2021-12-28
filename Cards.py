@@ -96,7 +96,7 @@ class Hand:
     def sort(self) -> None:
         self._cards.sort()
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Card:
         return self._cards[key]
     
     def __iter__(self):
@@ -140,7 +140,7 @@ class Discards:
     def __len__(self):
         return len(self._hand)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Card:
         return self._hand[key]
 
     def __str__(self):
