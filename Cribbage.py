@@ -263,7 +263,7 @@ class Game:
             assert discard_sum != self.discards.sum, "Player didn't put their play card on the discard pile!"
             self.last_to_peg = player
             self.notify_all(Notification(NotificationType.PLAY, self.players.turn, 0, \
-                " played the " + str(card) + " for " + str(self.discards.sum)))
+                " played the " + str(card)))
             self.score_pegging_points()
             if self.discards.sum == 31:
                 self.discards.start_new_pile()

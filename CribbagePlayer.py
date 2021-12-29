@@ -1,8 +1,12 @@
 """
 Player - abstract base class for a cribbage player
 """
+from enum import Enum, auto
 import getpass
 from typing import List, Tuple
+import time
+
+from pygame import display
 from Cards import Card, Discards, Hand, Suit
 import Cribbage
 
@@ -268,122 +272,199 @@ PLAYER_Y : Final = CARD_HEIGHT * 3 + GAP * 2
 WHITE : Final = (255, 255, 255)
 BLACK : Final = (0, 0, 0)
 
-"""
-PyGameCard - a card to display on the screen
-"""
-class PyGameCard(Card):
-    rank_names = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"]
-    suit_names = ["clubs", "diamonds", "hearts", "spades"]
-    cards = {}
 
-    def get_card(card : Card):
-        card_str = "face_down"
-        if card is not None:
-            card_str = str(card)
-        if card_str in PyGameCard.cards.keys():
-            return PyGameCard.cards[card_str]
-        pgCard = PyGameCard(card)
-        PyGameCard.cards[card_str] = pgCard
-        return pgCard
+"""
+PgCard - a card to display on the screen
+"""
+class PgCard(Card):
+    _RANK_NAMES : Final = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"]
+    _SUIT_NAMES : Final = ["clubs", "diamonds", "hearts", "spades"]
 
     def __init__(self, card: Card):
+        if card is not None:
+            super().__init__(card.suit, card.rank)
         self._card = card
         img_name = "images\\back.png"
         if card is not None:
-            img_name = "images\\" + PyGameCard.rank_names[card.rank - 1] + "_of_" + PyGameCard.suit_names[card.suit] + ".png"
+            img_name = "images\\" + PgCard._RANK_NAMES[card.rank - 1] + "_of_" + PgCard._SUIT_NAMES[card.suit] + ".png"
         img = pygame.image.load(img_name)
         new_width = (CARD_HEIGHT * img.get_width()) //img.get_height()
         self.img = pygame.transform.scale(img, (new_width, CARD_HEIGHT))
         self.x = 0
         self.y = 0
+        self.selected = False
 
     def contains_point (self, point : Tuple[int, int]) -> bool:
         if self.rect.collidepoint(point):
             return True
         return False
-
-    def toggle_selected (self):
-        new_width = new_height = 0
-        if self.get_selected():
-            new_height = CARD_HEIGHT
-            new_width = (CARD_HEIGHT * self.img.get_width()) // self.img.get_height()
-        else:
-            new_height = self.img.get_height() * 1.2 // 1
-            new_width = self.img.get_width() * 1.2 // 1
-        
-        self.img = pygame.transform.scale(self.img, (new_width, new_height))
-
-    def get_selected (self):
-        return self.img.get_height() != CARD_HEIGHT
     
     def blit (self, screen):
-        rect = self.img.get_rect()
+        img = self.img
+        if self.selected:
+            new_height = img.get_height() * 1.2 // 1
+            new_width = img.get_width() * 1.2 // 1
+            img = pygame.transform.scale(img, (new_width, new_height))
+
+        rect = img.get_rect()
         rect.x = self.x
         rect.y = self.y
         self.rect = rect
-        screen.blit(self.img, rect)
+        screen.blit(img, rect)
 
     @property
     def centery(self):
         return self.y + CARD_HEIGHT//2
+
+class PgPlayerState(Enum):
+    LAY_AWAY = auto()   # Player needs to discard two cards to the crib
+    PLAY     = auto()   # Player needs to play a pegging card
+    OTHER    = auto()   # Will eventually change this to things like "cut", "select game", etc
+
 """
-PyGamePlayer - PyGame GUID for the logged in user
+PgPlayer - PyGame GUID for the logged in user
 """
-class PyGamePlayer(Cribbage.Player):
+class PgPlayer(Cribbage.Player):
     def __init__(self):
         super().__init__()
         self.name = getpass.getuser()
         self.opponent_score = 0
-        self.pgCards = []
+        self.my_crib = True
+        self.num_opp_cards = 6
+        self.discards = Discards()
+        self.state = PgPlayerState.OTHER
+        self.last_scoring_msg = None
 
-    def display_crib(self, my_crib : bool):
-        pgCard = PyGameCard(None)
+    def display_crib(self):
+        pygame.draw.rect(self.screen, BLACK, (0, CRIB_Y, SCREEN_WIDTH, CARD_HEIGHT * 1.2))
+        
+        my_crib = self.my_crib
+        pgCard = PgCard(None)
         pgCard.x = 50
         pgCard.y = CRIB_Y
         pgCard.blit(self.screen)
-
-        msg = "Your crib" if my_crib else "Opponents crib"
+        if self.starter is not None and self.state != PgPlayerState.LAY_AWAY:
+            pgCard = PgCard(self.starter)
+            pgCard.x = 60
+            pgCard.y = CRIB_Y
+            pgCard.blit(self.screen)
+        
+        msg = ""
+        if self.state == PgPlayerState.LAY_AWAY:
+            if self.num_cards_selected == 2:
+                msg = "Click HERE to confirm crib discards"
+            else:
+                msg = "Select two cards for " + ("your" if my_crib else "the opponents") + " crib"
+        elif self.state == PgPlayerState.PLAY:
+            if self.num_cards_selected == 1:
+                msg = "Click in the crib area to confirm selection"
+            else:
+                msg = "Select a card to play - pegging count is " + str(self.discards.sum)
         font = pygame.font.Font(None, 32)
-        text = font.render(msg + str(self.score), True, BLACK, WHITE)
+        text = font.render(msg, True, WHITE)
         textRect = text.get_rect()
         textRect.centery = pgCard.centery
-        textRect.x = SCREEN_WIDTH//2
+        textRect.x = SCREEN_WIDTH//3
+        if self.state == PgPlayerState.PLAY and len(self.discards) != 0:
+            textRect.y = pgCard.y + CARD_HEIGHT + 10
+            textRect.centerx = SCREEN_WIDTH//2
+        
         self.screen.blit(text, textRect)
+
+        if self.state != PgPlayerState.LAY_AWAY:
+            x_inc = 70
+            card_num = 0
+            for card in self.discards:
+                pg_card = PgCard(card)
+                pg_card.x = SCREEN_WIDTH//3 + x_inc * card_num
+                pg_card.y = CRIB_Y
+                pg_card.blit(self.screen)
+                card_num += 1
+            
+            x_inc = 30
+            for card in self.discards.older_discards:
+                pg_card = PgCard(card)
+                pg_card.x = 3*SCREEN_WIDTH//4 + x_inc * card_num
+                pg_card.y = CRIB_Y
+                pg_card.blit(self.screen)
+                card_num += 1
+
+    def confirm_selection(self, pt):
+        if self.state == PgPlayerState.LAY_AWAY:
+            if self.num_cards_selected == 2 and pt[0] > SCREEN_WIDTH//3 and \
+                pt[1] > CRIB_Y and pt[1] < CRIB_Y + CARD_HEIGHT:
+                return True
+            return False 
+        elif self.state == PgPlayerState.PLAY:
+            if self.num_cards_selected == 1 and pt[0] > SCREEN_WIDTH//3 and \
+                pt[1] > CRIB_Y and pt[1] < CRIB_Y + CARD_HEIGHT:
+                return True
+            return False 
+        else:
+            return False
+
+    @property
+    def num_cards_selected(self) -> int:
+        num_cards_selected = 0
+        for card in self.hand:
+            if card.selected:
+                num_cards_selected += 1
+        return num_cards_selected
 
     def display_scores(self):
         font = pygame.font.Font(None, 32)
+        my_crib = self.my_crib
+
+        pygame.draw.rect(self.screen, BLACK, (0, SCORE_Y, SCREEN_WIDTH, CARD_HEIGHT))
         
-        text = font.render("Your score: " + str(self.score), True, BLACK, WHITE)
+        text = font.render("Your score: " + str(self.score), True, WHITE)
         textRect = text.get_rect()
         textRect.y = SCORE_Y
-        textRect.centerx = SCREEN_WIDTH//2
+        textRect.right = SCREEN_WIDTH//2
         self.screen.blit(text, textRect)
 
-        text = font.render("Opponent score: " + str(self.opponent_score), True, BLACK, WHITE)
+        text = font.render("Opponent score: " + str(self.opponent_score), True, WHITE)
         textRect = text.get_rect()
         textRect.y = SCORE_Y + text.get_height() + GAP//2
-        textRect.centerx = SCREEN_WIDTH//2
+        textRect.right = SCREEN_WIDTH//2
         self.screen.blit(text, textRect)
 
-    # Display the cards to the screen, notify selected cards via q
-    def display_cards(self, hand : Hand, q : Queue):
-        x_inc = SCREEN_WIDTH//6
+        text = font.render("< crib", True, WHITE)
+        textRect = text.get_rect()
+        if my_crib:
+            textRect.y = SCORE_Y
+        else:
+            textRect.y = SCORE_Y + text.get_height() + GAP//2
+        textRect.x = SCREEN_WIDTH//2 + 50
+        self.screen.blit(text, textRect)
 
-        # Show dealers cards (face down)
-        for i in range(len(hand)):
-            pgCard = PyGameCard(None)
-            pgCard.x = x_inc * i
+        if self.last_scoring_msg is not None:
+            text = font.render(self.last_scoring_msg, True, WHITE)
+            textRect = text.get_rect()
+            textRect.y = SCORE_Y + 2*text.get_height() + GAP
+            textRect.centerx = SCREEN_WIDTH//2
+            self.screen.blit(text, textRect)
+
+    # Display the cards to the screen
+    def display_cards(self):
+        x_incr = SCREEN_WIDTH//6 if self.state == PgPlayerState.LAY_AWAY else SCREEN_WIDTH//4
+        
+        # Show dealers cards (face down) after first clearing out any older displays
+        pygame.draw.rect(self.screen, BLACK, (0, DEALER_Y, SCREEN_WIDTH, CARD_HEIGHT * 1.2))
+        for i in range(self.num_opp_cards):
+            pgCard = PgCard(None)
+            pgCard.x = i * x_incr
             pgCard.y = DEALER_Y
             pgCard.blit(self.screen)
 
-        # Show players cards
-        self.pgCards = []
-        for i in range(len(hand)):
-            pgCard = PyGameCard(hand[i])
-            pgCard.x = x_inc * i
+        # Show players cards after first clearing out any older displays
+        pygame.draw.rect(self.screen, BLACK, (0, PLAYER_Y, SCREEN_WIDTH, CARD_HEIGHT * 1.2))
+        x_pos = 0
+        for pgCard in self.hand:
+            pgCard.x = x_pos
             pgCard.y = PLAYER_Y
             pgCard.blit(self.screen)
-            self.pgCards.append(pgCard)
+            x_pos += x_incr
 
     # The main UX event loop
     def ux_event_loop(self):
@@ -400,76 +481,80 @@ class PyGamePlayer(Cribbage.Player):
                 quit()
             elif event.type == pygame.USEREVENT:
                 if event.subtype=="layaway":
-                    self.screen.fill(BLACK)
-                    self.display_scores ()
-                    self.display_cards (event.hand, event.q)
-                    self.display_crib(event.my_crib)
+                    self.state = PgPlayerState.LAY_AWAY
+                    self.num_opp_cards = 6
+                    self.q = event.q
+                    pgHand = Hand()
+                    for card in self.hand:
+                        pgHand.add_card(PgCard(card))
+                    self.hand = pgHand
+                    #self.screen.fill(BLACK)
+                    self.display_scores()
+                    self.display_cards()
+                    self.display_crib()
+                if event.subtype=="play":
+                    self.state = PgPlayerState.PLAY
+                    self.q = event.q
+                    self.display_scores()
+                    self.display_cards()
+                    self.display_crib()
+                if event.subtype=="score":
+                    self.display_scores()
+
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 pt = pygame.mouse.get_pos()
-                for pgCard in self.pgCards:
-                    if pgCard.contains_point(pt):
-                        pgCard.toggle_selected()
-                        pgCard.blit(self.screen)
-                        break
+                if len(self.hand) > 0 and isinstance (self.hand[0], PgCard):
+                    for pgCard in self.hand:
+                        if pgCard.contains_point(pt):
+                            if self.state == PgPlayerState.LAY_AWAY or \
+                                    (self.state == PgPlayerState.PLAY and pgCard.points + self.discards.sum <= 31):
+                                pgCard.selected = not pgCard.selected
+                                self.display_cards()
+                                self.display_crib()
+                                break
+                        if self.confirm_selection (pt):
+                            if self.state == PgPlayerState.LAY_AWAY:
+                                self.num_opp_cards = 4
+                            self.state = PgPlayerState.OTHER
+                            self.q.put(None)
        
             pygame.display.flip()
 
     def select_lay_aways(self, my_crib : bool):
+        self.my_crib = my_crib
         q = Queue()
-        event = pygame.event.Event(pygame.USEREVENT, subtype="layaway", hand=self.hand, my_crib=my_crib, q=q)
+        event = pygame.event.Event(pygame.USEREVENT, subtype="layaway", q=q)
         pygame.event.post (event)
         data = q.get()
-
-        print ("Got some data: " + str(data))
-        """
-        while True:
-            question = "What (comma-separated) cards will you discard to your crib?"
-            if not your_crib:
-                question = "What (comma-separated) cards will you discard to your opponents crib?"
-            cards = input (question).replace(" ", "").split(",")
-            if len(cards) != 2:
-                print ("You need to type in exactly one comma")
-                continue
-            if cards[0] == cards[1]:
-                print ("Cards must be unique")
-                continue
-            cards_found = True
-            for card in cards:
-                if not hand.find_card(card):
-                    print ("Card " + str(card) + " is not one of your cards")
-                    cards_found = False
-            if not cards_found:
-                continue
-
-            selected = []
-            for card in cards:
-                selected.append(hand.play_card(card, True))
-            return selected
-        """
+        cards = []
+        for card in self.hand:
+            if card.selected:
+                cards.append(card)
+        assert len(cards) == 2, "Layaways were confirmed - but there are not 2 selected"
+        return self.hand.play_card(cards[0], True), self.hand.play_card(cards[1], True)
 
     def select_play(self, starter, discards):
         hand = self.hand
-        #print()
-        #print ("Score: You " + str(self.score) + "\t\tOpponent " + str(self.opponent_score))
-        #print ("Starter card: " + str(starter))
-        #print (str(discards))
-        #print ("Your hand: " + str(hand))
-        while True:
-            card = input ("What card will you discard? ").strip()
-            found = hand.find_card(card)
-            if found is None:
-                print ("Please enter a valid discard")
-                continue
-            if found.points + discards.sum > 31:
-                print ("Invalid discard; the discard pile total must be <= 31")
-                continue
-            card = hand.play_card(card)
-            discards.add_card(card)
-            return card 
+        self.discards = discards
+        q = Queue()
+        event = pygame.event.Event(pygame.USEREVENT, subtype="play", q=q)
+        pygame.event.post (event)
+        data = q.get()
+        selected_card = None
+        for card in self.hand:
+            if card.selected:
+                selected_card = card
+        assert selected_card is not None, "No card selected for play"
+        card = hand.play_card(selected_card)
+        discards.add_card(card)
+        return card            
 
     def notify(self, notification : Cribbage.Notification):
         if notification.type == Cribbage.NotificationType.PLAY and notification.player != self:
-            pass
+            self.num_opp_cards -= 1
+            self.last_scoring_msg = "Opponent played the " + notification.data
+            time.sleep(1)
+
         if notification.type == Cribbage.NotificationType.CUT_FOR_DEAL and notification.player == self:
             pass
         elif notification.type == Cribbage.NotificationType.STARTER_CARD and notification.player == self:
@@ -480,6 +565,11 @@ class PyGamePlayer(Cribbage.Player):
         if notification.type in [Cribbage.NotificationType.POINTS, Cribbage.NotificationType.SCORE_HAND, Cribbage.NotificationType.SCORE_CRIB]:
             if notification.player != self:
                 self.opponent_score += notification.points
+            self.last_scoring_msg = ("You " if notification.player == self else "Opponent") + \
+                " scored +" + str(notification.points) + ": " + notification.data
+            event = pygame.event.Event(pygame.USEREVENT, subtype="points")
+            pygame.event.post (event)
+            time.sleep(1)
         elif notification.type == Cribbage.NotificationType.NEW_GAME:
             self.opponent_score = 0
 
@@ -490,11 +580,11 @@ class PyGamePlayer(Cribbage.Player):
 # play_match (ConsolePlayer(), EasyComputerPlayer(), 3)
 
 # Single game between a PyGame player and the standard AI
-#play_match (PyGamePlayer(), StandardComputerPlayer(), 1)
+#play_match (pgPlayer(), StandardComputerPlayer(), 1)
 
-pygame_player = PyGamePlayer()
-game_engine_thread = threading.Thread(target=play_match, args = [PyGamePlayer(), StandardComputerPlayer(), 1])
+pg_player = PgPlayer()
+game_engine_thread = threading.Thread(target=play_match, args = [pg_player, StandardComputerPlayer(), 1])
 game_engine_thread.setDaemon(True) 
 game_engine_thread.start()
-pygame_player.ux_event_loop()
+pg_player.ux_event_loop()
 
