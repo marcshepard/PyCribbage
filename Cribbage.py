@@ -22,7 +22,7 @@ class Player:
         self.score = 0
 
     @abstractmethod
-    def select_lay_aways(self, your_crib : bool) -> Tuple[Cards.Card, Cards.Card]:
+    def select_lay_aways(self, my_crib : bool) -> Tuple[Cards.Card, Cards.Card]:
         pass
 
     @abstractmethod
