@@ -453,28 +453,5 @@ class PgPlayer(Cribbage.Player):
             
 
 # Play the game
-def play():
-    # The game must be launched from it's directory in order to work properly
-    cwd = getcwd()
-    if argv is not None and len(argv) >= 1:
-        dir = path.dirname(argv[0])
-        if not path.abspath(dir):
-            dir = cwd + "\\" + dir
-        chdir(dir)
-
-    # Create a match against the "standard" AI by default
-    pg_player = PgPlayer()
-    game = Cribbage.Game([pg_player, Cribbage.StandardComputerPlayer()])
-    pg_player.game = game
-
-    # Launch the engine as a daemon thread, so it exits if the main UI exits
-    game_engine_thread = threading.Thread(target=game.play)
-    game_engine_thread.setDaemon(True) 
-    game_engine_thread.start()
-
-    # And launch the main UX in the foreground thread
-    pg_player.ux_event_loop()
-
-#play()
 player = PgPlayer()
 player.play()
