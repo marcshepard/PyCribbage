@@ -11,17 +11,18 @@ To play:copy this git locally, and then either:
     from os import chdir
     chdir("<path>")     # Where <path> is the full local path; make sure to escape the "\" (to "\\" with the string)
     import CribbageUs
-* In theory there should be a way to make it work with windows file associations, but I've not figured it out
+* Launch from file explorer
 
-Known bugs/minor features:
-* Add "home screen" GUI before game to pick opponent
-* Add GUI for "cut for deal" (internally it is being done - just not exposed in UX)
-* This list of bugs belongs in github and not in the README
+Known bugs:
+* None
 
-Backlog of major work items:
+Backlog of work items:
+* Add list of bugs and backlog items to github (and remove from this README)
 * Add expert computer mode play:
     * Estimating the starter card when discarding
     * Consider opponent "counter-pegging" options when pegging
+* Add "home screen" GUI to pick opponent level
+* Add GUI for "cut for deal" (internally it is being done - just not exposed in UX)
 * Add statistics; wins/losses, avg crib, hand, pegging points
 * Add super-expert mode
     * Includes data-driven play based on stats data (prereq - hosted telemetry stats)
