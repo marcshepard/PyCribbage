@@ -102,6 +102,12 @@ class Hand:
     def sort(self) -> None:
         self._cards.sort()
 
+    def reset(self) -> None:
+        assert len(self._cards) == 0, "Reseting hand only happens at end of round when hand is empty"
+        self._cards = self._played_cards
+        self._played_cards = []
+        self._cards.sort()
+
     def __getitem__(self, key) -> Card:
         return self._cards[key]
     

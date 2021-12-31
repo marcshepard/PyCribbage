@@ -3,11 +3,12 @@ TestHarness.py - test harness for the cribbage game
 """
 
 import Cards
-import Cribbage
+import CribbageEngine as Cribbage
 
 # Tracing function for console output
 def trace (s):
-    print (s)
+    pass
+    #print (s)
 
 # Verified an unshuffled deck starts with a 2 of clubs and has 52 cards
 deck = Cards.Deck()
@@ -18,44 +19,43 @@ for i in range(1, 52):
     card = deck.draw()
     assert type(card) is Cards.Card, "Deck should have 52 cards"
 
-# Verify we can shuffle a deck, and create a cribbage hand from 6 drawn cards
+# Verify we can shuffle a deck, and deal a cribbage hand from 6 drawn cards
 deck = Cards.Deck()
 deck.shuffle()
-cards = []
-while len(cards) < 6:
-    cards.append (deck.draw())
-hand = Cribbage.Hand (cards)
-trace (hand)
+hand = Cards.Hand ()
+while len(hand) < 6:
+    hand.add_card (deck.draw())
+assert len(hand) == 6
 
-# Verify the dealt hand is sorted, and after a lay-away the unplayed_cards are populated properly
-assert len(hand.dealt_cards) == 6
+# Verify we can sort the hand
+hand.sort()
 last_rank = 0
-for card in hand.dealt_cards:
+for card in hand:
     assert card.rank >= last_rank, "Dealt hands should be sorted by rank"
     last_rank = card.rank
-hand.lay_away(4, 5)
-for i in range (0, 4):
-    assert str(hand.unplayed_cards[i]) == str(hand.dealt_cards[i]), "After lay_away, unplayed_cards should be populated with the remaining 4 cards"
-trace (hand)
 
-# Verify that playing cards moves cards from the unplayed pile to the played pile
-for i in range (1, 5):
-    card = hand.play(0)
-    assert type(card) is Cards.Card, "Hand.play() should return a Card"
-    assert len(hand.played_cards) == i, "Hand.play: should add a card to the played list"
-    assert len(hand.unplayed_cards) == 4-i, "Hand.play: should remove a card from the unplayed list"
-trace (hand)
+# Verify we can discard
+card = hand.play_card(hand[0])
+assert isinstance (card, Cards.Card), "Playing a card should return a card"
+assert len(hand) == 5, "Playing a card should reduce the hand size by 1"
+assert card in hand.played_cards, "Playing a card should move it to the played_cards pile"
+
+# Verify we can reclaim the played cards
+while len(hand) > 0:
+    hand.play_card(hand[0])
+hand.reset()
+assert len(hand) == 6, "Reset should restore the hand (bring back played cards)"
 
 # Verify we can create a discard pile
 deck = Cards.Deck()
 deck.shuffle()
-discards = Cribbage.Discards()
+discards = Cards.Discards()
 for i in range (3):
     discards.add_card (deck.draw())
-assert len(discards.current_pile) == 3, "Discards.add_card() should add cards"
+assert len(discards) == 3, "Discards.add_card() should add cards"
 trace (discards)
 discards.start_new_pile()
-assert len(discards.current_pile) == 0, "Discards.start_new_pile() should reset the current pile"
+assert len(discards) == 0, "Discards.start_new_pile() should reset the current pile"
 assert len(discards.older_discards) == 3, "Discards.start_new_pile() should append to older_discards"
 for i in range (2):
     discards.add_card (deck.draw())

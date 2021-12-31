@@ -4,7 +4,7 @@ Cribbage.py - Classes for the Cribbage engine
 
 from abc import abstractmethod
 from enum import Enum, auto
-from typing import List, Tuple, get_origin
+from typing import List, Tuple
 import Cards
 from math import comb
 
@@ -18,7 +18,6 @@ class Player:
 
     def reset (self):
         self.hand : Cards.Hand = None
-        self.starter : Cards.Card = None
         self.score = 0
 
     @abstractmethod
@@ -104,7 +103,7 @@ class NotificationType(Enum):
     CUT_FOR_DEAL = auto()   # A player cut for deal
     DEAL         = auto()   # The dealer dealt the hands
     STARTER_CARD = auto()   # Starter card selected
-    PLAY         = auto()   # A pegging play was made
+    PLAY         = auto()   # A pegging card was played
     GO           = auto()   # Player said "go"
     SCORE_HAND   = auto()   # A hand was scored
     SCORE_CRIB   = auto()   # The crib was scored
@@ -129,7 +128,7 @@ class Notification:
         elif self.type == NotificationType.STARTER_CARD:
             return self.player.name + " cut the starter card " + self.data
         elif self.type == NotificationType.PLAY:
-            return self.player.name + self.data
+            return self.player.name + " played the " + self.data
         elif self.type == NotificationType.GO:
             return self.player.name + " said 'go'"
         elif self.type == NotificationType.POINTS:
@@ -149,6 +148,7 @@ class Notification:
 class Game:
     def __init__(self, players : List[Players]):
         self.players = Players(players)
+        self.starter = None
 
     # A helper method to notify all players when something happens
     def notify_all(self, notification : Notification) -> None:
@@ -230,6 +230,7 @@ class Game:
             for card in player.select_lay_aways (player == self.players.dealer):
                 crib.add_card (card)
         self.crib = crib
+        self.players.dealer.crib = crib
         assert len(crib) == 4, "Crib doesn't have 4 cards!"
         for player in self.players:
             assert len(player.hand) == 4, "Player " + player.name + " doesn't have 4 unplayed cards"
@@ -240,8 +241,6 @@ class Game:
         self.notify_all (Notification (NotificationType.STARTER_CARD, self.players.turn, 0, str(self.starter)))
         if self.starter.rank == 11:
             self.add_points(self.players.dealer, 2, "His Heels")
-        for player in self.players:
-            player.starter = self.starter
 
         # Set up the discard pile
         self.discards = Cards.Discards()
@@ -262,8 +261,7 @@ class Game:
             assert len(player.hand) == num_cards_to_play - 1, "Player didn't play a card!"
             assert discard_sum != self.discards.sum, "Player didn't put their play card on the discard pile!"
             self.last_to_peg = player
-            self.notify_all(Notification(NotificationType.PLAY, self.players.turn, 0, \
-                " played the " + str(card)))
+            self.notify_all(Notification(NotificationType.PLAY, self.players.turn, 0, str(card)))
             self.score_pegging_points()
             if self.discards.sum == 31:
                 self.discards.start_new_pile()
@@ -288,12 +286,16 @@ class Game:
         player = self.players.turn
         discards = self.discards
         card = discards[len(discards) - 1]
+        reason = ""
+        points = 0
 
         if discards.sum == 31:
-            self.add_points(player, 2, "31")
+            reason += "31 for 2"
+            points += 2
 
         if discards.sum == 15:
-            self.add_points(player, 2, "Fifteen")
+            reason += "Fifteen for 2"
+            points += 2
 
         in_a_row = 1           # How many cards in a row of the same rank?
         i = len(discards) - 2
@@ -304,35 +306,35 @@ class Game:
                 break
             i -= 1
         if in_a_row > 1:
-            points = 2 * comb(in_a_row, 2)
-            msg = ""
+            points += 2 * comb(in_a_row, 2)
             if in_a_row == 2:
-                msg = "Pair"
+                reason += "Pair for 2"
             elif in_a_row == 3:
-                msg = "Three of a kind"
+                reason += "Three of a kind for 6"
             elif in_a_row == 4:
-                msg = "Four of a kind"
-            self.add_points(player, points, msg)
+                reason += "Four of a kind for 12"
 
-        if len(discards) < 3:
-            return
-
-        for i in range (len(discards) - 2):
-            check_for_run = []
-            for j in range (i, len(discards)):
-                check_for_run.append(discards[j].rank)
-            check_for_run.sort()
-            is_run = True
-            last_card = check_for_run[0]
-            for k in range(1, len(check_for_run)):
-                if check_for_run[k] != last_card + 1:
-                    is_run = False
+        if len(discards) >= 3:
+            for i in range (len(discards) - 2):
+                check_for_run = []
+                for j in range (i, len(discards)):
+                    check_for_run.append(discards[j].rank)
+                check_for_run.sort()
+                is_run = True
+                last_card = check_for_run[0]
+                for k in range(1, len(check_for_run)):
+                    if check_for_run[k] != last_card + 1:
+                        is_run = False
+                        break
+                    last_card = check_for_run[k]
+                if is_run:
+                    run_size = len(check_for_run)
+                    reason += "Run of " + str(run_size)
+                    points += run_size
                     break
-                last_card = check_for_run[k]
-            if is_run:
-                run_size = len(check_for_run)
-                self.add_points (player, run_size, "Run of " + str(run_size))
-                break
+        
+        if points > 0:
+            self.add_points(player, points, reason)
     
     def score_hands(self) -> None:
         self.notify_all(Notification(NotificationType.ROUND_OVER, None, 0, str(self.starter)))
@@ -345,11 +347,6 @@ class Game:
                 cards.sort()
                 score, reason = Game.get_hand_value(cards, starter)
                 player.score += score
-                hand_info = "Hand(plus starter) = "
-                for card in cards:
-                    hand_info += str(card) + " "
-                hand_info += "(" + str(starter) + ")\n"
-                reason = hand_info + reason
                 self.notify_all(Notification(NotificationType.SCORE_HAND, player, score, reason))
 
         if not self.game_over:
@@ -357,11 +354,6 @@ class Game:
             self.crib._cards.sort()
             score, reason = Game.get_hand_value(self.crib._cards, starter, is_crib = True)
             player.score += score
-            hand_info = "Hand(plus starter) = "
-            for card in self.crib:
-                hand_info += str(card) + " "
-            hand_info += "(" + str(starter) + ")\n"
-            reason = hand_info + reason
             self.notify_all(Notification(NotificationType.SCORE_CRIB, player, score, reason))
 
     # Get the value of a hand (4 cards + starter card)
@@ -569,4 +561,153 @@ class Game:
         self.notify_all (Notification (NotificationType.GAME_OVER, winner, 0, final_score))
 
 
+"""
+EasyComputerPlayer - the easy automated computer opponent
 
+Always discards it's highest cards to the crib
+Always plays it's lowest card while pegging
+"""
+class EasyComputerPlayer(Player):
+    def __init__(self):
+        super().__init__()
+        self.name = "Easy"
+
+    def select_lay_aways(self, my_crib : bool) -> Tuple[Cards.Card, Cards.Card]:
+        return self.hand.play_card(str(self.hand[5]), True), self.hand.play_card(str(self.hand[4]), True)
+
+    def select_play(self, starter, discards) -> Cards.Card:
+        hand = self.hand
+        card = hand.play_card(str(hand[0]))
+        discards.add_card(card)
+        return card
+
+    def notify(self, notification : Notification) -> None:
+        pass
+
+"""
+MediumComputerPlayer - a more typical automated computer opponent
+
+Discards to the crib keeping the cards with the highest net points (card points +/- discard points)
+Plays the card that will score the highest. If a tie, play the highest allowed card
+"""
+class StandardComputerPlayer(Player):
+    def __init__(self):
+        super().__init__()
+        self.name = "Standard"
+
+    # Compute the expected value of a given hand of cards (without knowing the starter card)
+    def expected_hand_value (hand : Cards.Hand) -> int:
+        points = 0
+
+        # knobs
+        for card in hand:
+            if card.rank == 11:
+                points += .235  # 23.5% chance the starter card is the same suit
+
+        # Flush points
+        if len(hand) == 4 and hand[0].suit == hand[1].suit == hand[2].suit == hand[3].suit:
+            points += 4.18   # 4 points for the flush, plus 18% chance the starter card is the same suit
+
+        # For 15s, pairs, runs - first convert to simpler list of ranks
+        cards = []
+        for card in hand:
+            cards.append(card.rank)
+
+        # 15s
+        points += 2 * Game.get_counts (15, cards)
+
+        # pairs
+        points += 2 * Game.get_pair_count(cards)
+
+        # runs
+        run_len, multiplier = Game.get_run_count (cards)
+        points += run_len * multiplier
+
+        return points
+
+    # Select discards resulting in the highest net points (card points +/- discard points)
+    def select_lay_aways(self, my_crib : bool) -> Tuple[Cards.Card, Cards.Card]:
+        max_points = 0
+        card1 = None
+        card2 = None
+        crib = Cards.Hand()
+        hand = self.hand
+        expected_hand_value = 0
+        expected_crib_value = 0
+        points = 0
+
+        # Find the discards that produces the highest score (hand +- crib) without regard to starter draw
+        for i in range(len(hand) - 1):
+            for j in range (i + 1, len(hand)):
+                cardj = hand.pop(j)
+                cardi = hand.pop(i)
+                crib.add_card(cardi)
+                crib.add_card(cardj)
+                hand_value = StandardComputerPlayer.expected_hand_value (hand)
+                crib_value = StandardComputerPlayer.expected_hand_value (crib)
+                h = str(hand)
+                c = str(crib)
+                if my_crib:
+                    points = hand_value + crib_value
+                else:
+                    points = hand_value - crib_value
+                if points > max_points:
+                    card1 = cardi
+                    card2 = cardj
+                    expected_crib_value = crib_value
+                    expected_hand_value = hand_value
+                    max_points = points
+                hand.push(i, cardi)
+                hand.push(j, cardj)
+                crib.pop(0)
+                crib.pop(0)
+
+        # If all possible discards result in 0 expected value, discard highest cards (improves pegging)
+        if card1 is None or card2 is None:
+            card1 = hand[5]
+            card2 = hand[4]
+
+        return self.hand.play_card(str(card1), True), self.hand.play_card(str(card2), True)
+
+    # Do the pegging play that gives the highest score. If a tie, play the highest allowed card
+    def select_play(self, starter : Cards.Card, discards : Cards.Discards) -> Cards.Card:
+        hand = self.hand
+        points_per_card = [-1]*len(hand)
+        max_points = 0
+        for i in range(len(hand) - 1, -1, -1):
+            if discards.sum + hand[i].points > 31:
+                points_per_card[i] = -1
+                continue
+            points_per_card[i] = Game.calculate_pegging_points(hand[i].rank, discards)
+            if points_per_card[i] > max_points:
+                max_points = points_per_card[i]
+
+        for i in range(len(hand) - 1, -1, -1):
+            if points_per_card[i] == max_points:
+                card = hand.play_card(str(hand[i]))
+                discards.add_card(card)
+                return card
+        assert False, "Couldn't select a card to play"
+
+    def notify(self, notification : Notification) -> None:
+        pass
+
+def play_match(player0 : Player, player1 : Player, num_games : int) -> None:
+    print ("A match of " + str(num_games) + " between " + player0.name + " and " + player1.name)
+    player0_wins = 0
+    player1_wins = 0
+    while num_games > 0:
+        game = Game([player0, player1])
+        game.play()
+        wins = 1
+        if game.players[0].score <= 90 or game.players[0].score <= 90:
+            wins += 1
+        if game.players[0].score >= 121:
+            player0_wins += wins
+        else:
+            player1_wins += wins
+        num_games -= wins
+    print ("Final score: " + player0.name + " " + str(player0_wins) + "\t\t" + player1.name + " " + str(player1_wins))
+
+# To test out different AI's, let them battle each other, like so:
+#play_match (EasyComputerPlayer(), StandardComputerPlayer(), 100)
