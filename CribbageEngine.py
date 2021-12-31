@@ -276,7 +276,7 @@ class Game:
 
         # If no one else can go, reset the discard pile and give the last pegger credit for last card
         if not self.can_anyone_go:
-            self.add_points(self.last_to_peg, 1, "Last card")
+            self.add_points(self.last_to_peg, 1, "Go")
             self.discards.start_new_pile()
             while self.players.turn != self.last_to_peg:
                 self.players.rotate_turn()
@@ -290,11 +290,11 @@ class Game:
         points = 0
 
         if discards.sum == 31:
-            reason += "31 for 2"
+            reason += "31 for 2\n"
             points += 2
 
         if discards.sum == 15:
-            reason += "Fifteen for 2"
+            reason += "Fifteen for 2\n"
             points += 2
 
         in_a_row = 1           # How many cards in a row of the same rank?
@@ -308,11 +308,11 @@ class Game:
         if in_a_row > 1:
             points += 2 * comb(in_a_row, 2)
             if in_a_row == 2:
-                reason += "Pair for 2"
+                reason += "Pair for 2\n"
             elif in_a_row == 3:
-                reason += "Three of a kind for 6"
+                reason += "Three of a kind for 6\n"
             elif in_a_row == 4:
-                reason += "Four of a kind for 12"
+                reason += "Four of a kind for 12\n"
 
         if len(discards) >= 3:
             for i in range (len(discards) - 2):

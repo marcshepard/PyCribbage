@@ -72,12 +72,13 @@ class PgCard(Card):
         return self.y + CARD_HEIGHT//2
 
 class PgPlayerState(Enum):
-    LAY_AWAY    = auto()   # Player needs to discard two cards to the crib
-    PLAY        = auto()   # Player needs to play a pegging card
+    LAY_AWAY    = auto()    # Player needs to discard two cards to the crib
+    PLAY        = auto()    # Player needs to play a pegging card
     SCORE_HAND  = auto()    # Scoring the players hand
     SCORE_OPP_HAND = auto() # Scoring the opponents hand
     SCORE_CRIB  = auto()    # Scoring the crib
-    OTHER       = auto()   # Will eventually change this to things like "cut", "select game", etc
+    GAME_OVER   = auto()    # Game is over
+    OTHER       = auto()    # Will eventually change this to things like "cut", "select game", etc
 
 """
 PgPlayer - PyGame GUID for the logged in user
@@ -91,6 +92,33 @@ class PgPlayer(Cribbage.Player):
         self.made_play = False
         self.event = threading.Event()
         pygame.init()
+
+    # Play a game, or start a new game
+    def play(self, level : int = 1):
+        self.start_new_game(level)
+        self.ux_event_loop()
+
+    # Start another game
+    def start_new_game(self, level : int = 1):
+        # Reset some state
+        super().reset()
+        self.state = PgPlayerState.OTHER
+        self.last_scoring_msg = None
+        self.made_play = False
+        
+        # Select opponent
+        opponent = None
+        if level == 0:
+            opponent = Cribbage.EasyComputerPlayer()
+        else:
+            opponent = Cribbage.StandardComputerPlayer()
+
+        # Create a game, and launch as a daemon thread so it exits if the main UI exits
+        game = Cribbage.Game([self, opponent])
+        self.game = game
+        game_engine_thread = threading.Thread(target=game.play)
+        game_engine_thread.setDaemon(True)
+        game_engine_thread.start()
 
     @property
     def starter(self):
@@ -114,10 +142,7 @@ class PgPlayer(Cribbage.Player):
 
     @property
     def opponent_score(self):
-        return self.game.players[1].score
-
-    def set_game(self, game : Cribbage.Game):
-        self.game = game
+        return self.game.players[1].score if self.game.players[1].score < 121 else 121
 
     def post_event(self, event : Event, delay : int) -> None:
         pygame.event.post (event)
@@ -172,12 +197,12 @@ class PgPlayer(Cribbage.Player):
         msg = ""
         if self.state == PgPlayerState.LAY_AWAY:
             if self.num_cards_selected == 2:
-                msg = "Click in crib area above to confirm crib discards"
+                msg = "Click anywhere above to confirm crib discards"
             else:
                 msg = "Select two cards for " + ("your" if self.my_crib else "the opponents") + " crib"
         elif self.state == PgPlayerState.PLAY and self.my_turn and not self.made_play:
             if self.num_cards_selected == 1:
-                msg = "Click in the crib area above to confirm selection"
+                msg = "Click anywhere above to confirm selection"
             elif len(self.hand) == 0:
                 msg = "Your cards are played - we'll count hands in a moment"
             else:
@@ -186,13 +211,16 @@ class PgPlayer(Cribbage.Player):
             msg = ""
             if self.state == PgPlayerState.SCORE_CRIB:
                 msg += "Your" if self.my_crib else "Your opponents"
-                msg += " crib was scored - click in the crib area to continue"
+                msg += " crib was scored - click anywhere above to continue"
             elif self.state == PgPlayerState.SCORE_HAND:
-                msg += "Your hand was scored - click in the crib area to continue"
+                msg += "Your hand was scored - click anywhere above to continue"
             else:
-                msg += "Your opponents hand was scored - click in the crib area to continue"
+                msg += "Your opponents hand was scored - click anywhere above to continue"
         elif self.state == PgPlayerState.PLAY and len(self.hand) == 0 and self.num_opp_cards == 0:
-                msg = "The cards are all played - we'll count hands in a moment"
+            msg = "The cards are all played - we'll count hands in a moment"
+        elif self.state == PgPlayerState.GAME_OVER:
+            msg = "You" if self.score > self.game.players[1].score else "Your opponent"
+            msg += " won! Click anywhere above to play again"
         font = pygame.font.Font(None, 32)
         text = font.render(msg, True, WHITE)
         textRect = text.get_rect()
@@ -201,11 +229,11 @@ class PgPlayer(Cribbage.Player):
         self.screen.blit(text, textRect)
 
     def confirm_selection(self, pt):
-        right_area = pt[1] > CRIB_Y and pt[1] < CRIB_Y + CARD_HEIGHT
+        right_area = pt[1] < INSTRUCTIONS_Y
         right_state = (self.state == PgPlayerState.LAY_AWAY and self.num_cards_selected == 2) or \
             (self.state == PgPlayerState.PLAY and self.num_cards_selected == 1) or \
-            (self.state in [PgPlayerState.SCORE_CRIB, PgPlayerState.SCORE_HAND, PgPlayerState.SCORE_OPP_HAND])
-
+            (self.state in [PgPlayerState.SCORE_CRIB, PgPlayerState.SCORE_HAND, PgPlayerState.SCORE_OPP_HAND]) or \
+            (self.state == PgPlayerState.GAME_OVER)
         if right_area and right_state:
             return True
         return False
@@ -223,6 +251,8 @@ class PgPlayer(Cribbage.Player):
 
         pygame.draw.rect(self.screen, BLACK, (0, SCORE_Y, SCREEN_WIDTH, CARD_HEIGHT))
         
+        if self.score > 121:
+            self.score = 121
         text = font.render("Your score: " + str(self.score), True, WHITE)
         textRect = text.get_rect()
         textRect.y = SCORE_Y
@@ -334,6 +364,8 @@ class PgPlayer(Cribbage.Player):
                     self.crib = event.player.crib
                     self.q = event.q
                     self.state = PgPlayerState.SCORE_CRIB
+                elif event.subtype == "game_over":
+                    self.state = PgPlayerState.GAME_OVER
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 pt = pygame.mouse.get_pos()
@@ -346,14 +378,20 @@ class PgPlayer(Cribbage.Player):
                 if self.confirm_selection (pt):
                     if self.state == PgPlayerState.PLAY:
                         self.made_play = True
-                    if self.state == PgPlayerState.LAY_AWAY:
+                    elif self.state == PgPlayerState.LAY_AWAY:
                         self.state = PgPlayerState.PLAY
-                    self.q.put(None)
+                    elif self.state == PgPlayerState.GAME_OVER:
+                        self.start_new_game()
+                    if self.state != PgPlayerState.GAME_OVER:
+                        self.q.put(None)
 
             self.screen.fill(BLACK)
             self.display_scores()
-            self.display_cards()
-            self.display_crib()
+            if self.state == PgPlayerState.GAME_OVER:
+                pass
+            else:
+                self.display_cards()
+                self.display_crib()
             self.display_message()
             pygame.display.flip()
 
@@ -407,28 +445,36 @@ class PgPlayer(Cribbage.Player):
         elif notification.type == Cribbage.NotificationType.GO:
             msg = "You said 'go'" if notification.player == self else "Opponent said 'go'"
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="points", msg=msg), 2)
+        elif notification.type == Cribbage.NotificationType.GAME_OVER:
+            self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="game_over"), 0)
         elif notification.type == Cribbage.NotificationType.CUT_FOR_DEAL:
             pass    # TODO - implement GUI for this
-        elif notification.type == Cribbage.NotificationType.GAME_OVER:
-            pass    # TODO - implement GUI, game engine support for tracking wins and alternating dealers
-        # Final TODO - implement home screen logic to pick opponent level
-
+            #  TODO - also implement home screen that includes logic to pick opponent level
+            
 
 # Play the game
 def play():
+    # The game must be launched from it's directory in order to work properly
+    cwd = getcwd()
+    if argv is not None and len(argv) >= 1:
+        dir = path.dirname(argv[0])
+        if not path.abspath(dir):
+            dir = cwd + "\\" + dir
+        chdir(dir)
+
+    # Create a match against the "standard" AI by default
     pg_player = PgPlayer()
     game = Cribbage.Game([pg_player, Cribbage.StandardComputerPlayer()])
     pg_player.game = game
+
+    # Launch the engine as a daemon thread, so it exits if the main UI exits
     game_engine_thread = threading.Thread(target=game.play)
     game_engine_thread.setDaemon(True) 
     game_engine_thread.start()
+
+    # And launch the main UX in the foreground thread
     pg_player.ux_event_loop()
 
-cwd = getcwd()
-if argv is not None and len(argv) >= 1:
-    dir = path.dirname(argv[0])
-    if not path.abspath(dir):
-        dir = cwd + "\\" + dir
-    chdir(dir)
-
-play()
+#play()
+player = PgPlayer()
+player.play()

@@ -3,6 +3,7 @@ A game of cribbage
 Prereqs: A Windows 10 PC with Python 3.9 (or later) and PyGames installed
 * To instal Python: https://www.python.org/downloads/
 * To instal pygames: from cmd prompt - pip install pygames
+* A familiarity with the rules of cribbage: https://bicyclecards.com/how-to-play/cribbage/
 
 To play:copy this git locally, and then either:
 * Launch cmd and run "python CribbageUx.py"
@@ -14,7 +15,6 @@ To play:copy this git locally, and then either:
 
 Known bugs/minor features:
 * Add "home screen" GUI before game to pick opponent
-* Add ability to continue playing after a game ends
 * Add GUI for "cut for deal" (internally it is being done - just not exposed in UX)
 * This list of bugs belongs in github and not in the README
 

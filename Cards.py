@@ -15,8 +15,8 @@ class Suit(IntEnum):
 
 # A Card
 class Card:
-    _suit_short_names:Final = ["c", "d", "h", "s"]
-    _rank_short_names:Final = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+    _SUIT_NAMES:Final = ["clubs", "diamonds", "hearts", "spades"]
+    _RANK_NAMES:Final = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"]
     sortRankFirst = True   # Alternatively sort suit first
     
     def __init__ (self, suit : Suit, rank : int):
@@ -44,7 +44,7 @@ class Card:
         return self._rank if self._rank < 10 else 10
 
     def __str__(self):
-        return Card._rank_short_names[self._rank - 1] + Card._suit_short_names[self._suit]
+        return Card._RANK_NAMES[self._rank - 1] + " of " + Card._SUIT_NAMES[self._suit]
     
 # A Deck of 52 cards
 class Deck:
