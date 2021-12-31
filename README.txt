@@ -6,12 +6,12 @@ Prereqs: A Windows 10 PC with Python 3.9 (or later) and PyGames installed
 * A familiarity with the rules of cribbage: https://bicyclecards.com/how-to-play/cribbage/
 
 To play:copy this git locally, and then either:
+* Launch from file explorer
 * Launch cmd and run "python CribbageUx.py"
 * Launch the python app, and type:
     from os import chdir
     chdir("<path>")     # Where <path> is the full local path; make sure to escape the "\" (to "\\" with the string)
-    import CribbageUs
-* Launch from file explorer
+    import CribbageUx
 
 Known bugs:
 * None
