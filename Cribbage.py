@@ -25,7 +25,7 @@ import threading
 import pygame
 from pygame.constants import K_0, K_1, K_2
 from pygame.event import Event
-from CribbageEngine import Card, Hand, Player, Notification, NotificationType, Game, get_player
+from CribbageEngine import AdvancedPlayer, Card, Hand, Player, Notification, NotificationType, Game, get_player
 from enum import Enum, auto
 from typing import Tuple
 from queue import Queue
@@ -114,6 +114,7 @@ class PgPlayer(Player):
         self.name = "You"
         self.event = threading.Event()
         self.ai_level = 2
+        self.play_hints = False
         self.game = None
         pygame.init()
 
@@ -224,12 +225,16 @@ class PgPlayer(Player):
         msg = ""
         if self.state == PgPlayerState.LAY_AWAY:
             if self.num_cards_selected == 2:
-                msg = "Click anywhere above to confirm crib discards"
+                if self.play_hints:
+                    msg += self.comment_on_layaway_selection() + " "
+                msg += "Click anywhere above to confirm crib discards"
             else:
                 msg = "Select two cards for " + ("your" if self.my_crib else "the opponents") + " crib"
         elif self.state == PgPlayerState.PLAY and self.my_turn and not self.made_play:
             if self.num_cards_selected == 1:
-                msg = "Click anywhere above to confirm selection"
+                if self.play_hints:
+                    msg += self.comment_on_play_selection() + " "
+                msg += "Click anywhere above to confirm selection"
             elif len(self.hand) == 0:
                 msg = "Your cards are played - we'll count hands in a moment"
             else:
@@ -275,8 +280,13 @@ class PgPlayer(Player):
         font = pygame.font.Font(None, 32)
 
         y = CRIB_Y
-        msgs = ["Welcome to Cribbage.py!", "Difficulty level = " + str(self.ai_level), \
-            "Click anywhere to continue", "", "", "", "", "Type 0, 1, or 2 to adjust the difficulty level (0 = easiest)"]
+        msgs = ["Welcome to Cribbage.py!",
+                "Difficulty level = " + str(self.ai_level), 
+                "Play hints = " + str(self.play_hints),
+                "Click anywhere to continue", 
+                "", "", "", "",
+                "Type 0, 1, or 2 to adjust the difficulty level (0 = easiest)",
+                "Type h to toggle hint"]
 
         for msg in msgs:
             text = font.render(msg, True, WHITE)
@@ -351,9 +361,13 @@ class PgPlayer(Player):
             textRect.centerx = SCREEN_WIDTH//2
             self.screen.blit(text, textRect)
 
-    # Display the cards to the screen
+    # Display the dealer and player cards to the screen
     def display_cards(self):
         x_incr = SCREEN_WIDTH//6 if self.state == PgPlayerState.LAY_AWAY else SCREEN_WIDTH//4
+
+        # No need to display anything if we are scoring the crib
+        if self.state == PgPlayerState.SCORE_CRIB:
+            return
         
         # Show dealers cards
         if self.state == PgPlayerState.CUT_FOR_DEAL and self.cut_card is not None:
@@ -468,6 +482,8 @@ class PgPlayer(Player):
                     self.ai_level = 1
                 elif event.key == pygame.K_2:
                     self.ai_level = 2
+                elif event.key == pygame.K_h:
+                    self.play_hints = not self.play_hints
 
             self.screen.fill(BLACK)
             if self.state == PgPlayerState.NEW_GAME:
@@ -548,6 +564,31 @@ class PgPlayer(Player):
                 q = Queue()
                 self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="cut_for_deal", q=q), 0)
                 q.get()
+
+    # Figure out what cards the advanced AI player would play, compare to player selection, and return a hint
+    def comment_on_layaway_selection(self):
+        # Find out what cards the AI would lay away to the crib
+        cards = AdvancedPlayer.find_lay_aways (self.hand, self.my_crib)
+        
+        # Compare them to the cards the player selected
+        for card in self.hand:
+            if card.selected:
+                if card not in cards:
+                    return "Are you sure?"
+        return "Nice choice."
+    
+    # Figure out what card the advanced AI player would play, compare to player selection, and return a hint
+    def comment_on_play_selection(self):
+        # Find out what card the AI would play to the pegging pile
+        recommended_card = AdvancedPlayer.find_play (self.hand, self.starter, self.discards) 
+        
+        # Compare it to the card the player selected
+        for card in self.hand:
+            if card.selected:
+                if card != recommended_card:
+                    return "Are you sure?"        
+        return "Nice choice."
+
 
 # Play the game
 player = PgPlayer()

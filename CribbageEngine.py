@@ -414,6 +414,9 @@ class Game:
             player.hand.sort()
         self.notify_all(Notification(NotificationType.DEAL, self.players.dealer, 0, self.players))
 
+        # Set up the discard pile
+        self.discards = Discards()
+
         # Create the crib by getting lay_away cards from each player
         crib = Hand()
         for player in self.players:
@@ -432,8 +435,6 @@ class Game:
         if self.starter.rank == 11:
             self.add_points(self.players.dealer, 2, "His Heels")
 
-        # Set up the discard pile
-        self.discards = Discards()
     
     # Let the current player take their turn
     def take_turn(self) -> None:
@@ -1021,9 +1022,8 @@ class AdvancedPlayer(Player):
         card1, card2 = AdvancedPlayer.find_lay_aways(self.hand, my_crib)
         return self.hand.play_card(str(card1), True), self.hand.play_card(str(card2), True)
 
-    # Do the pegging play that gives the highest score. If a tie, play the highest allowed card
-    def select_play(self, starter : Card, discards : Discards) -> Card:
-        hand = self.hand
+    # Find the pegging play that gives the highest score. If a tie, select the highest allowed card
+    def find_play(hand : Hand, starter : Card, discards : Discards) -> Card:
         points_per_card = [-1]*len(hand)
         max_points = 0
         for i in range(len(hand) - 1, -1, -1):
@@ -1036,10 +1036,15 @@ class AdvancedPlayer(Player):
 
         for i in range(len(hand) - 1, -1, -1):
             if points_per_card[i] == max_points:
-                card = hand.play_card(str(hand[i]))
-                discards.add_card(card)
-                return card
+                return hand[i]
         assert False, "Couldn't select a card to play"
+
+    # Select the pegging play that gives the highest score. If a tie, play the highest allowed card
+    def select_play(self, starter : Card, discards : Discards) -> Card:
+        card = AdvancedPlayer.find_play(self.hand, starter, discards)
+        self.hand.play_card(card)
+        discards.add_card(card)
+        return card
 
     def notify(self, notification : Notification) -> None:
         pass
