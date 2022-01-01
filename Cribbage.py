@@ -96,6 +96,7 @@ class PgCard(Card):
 
 class PgPlayerState(Enum):
     NEW_GAME    = auto()    # New game started
+    CUT_FOR_DEAL = auto()   # Cut for deal
     LAY_AWAY    = auto()    # Player needs to discard two cards to the crib
     PLAY        = auto()    # Player needs to play a pegging card
     SCORE_HAND  = auto()    # Scoring the players hand
@@ -111,11 +112,9 @@ class PgPlayer(Player):
     def __init__(self):
         super().__init__()
         self.name = "You"
-        self.state = PgPlayerState.OTHER
-        self.last_scoring_msg = None
-        self.made_play = False
         self.event = threading.Event()
         self.ai_level = 2
+        self.game = None
         pygame.init()
 
     # Play a game, or start a new game
@@ -130,12 +129,21 @@ class PgPlayer(Player):
         self.state = PgPlayerState.OTHER
         self.last_scoring_msg = None
         self.made_play = False
-        
+        self.cut_card = None
+        self.opponent_cut_card = None
+
+        # Get previous dealer, if there was one
+        previous_dealer = self.game.initial_dealer if self.game is not None else None
+
         # Create a game, and launch as a daemon thread so it exits if the main UI exits
         opponent = get_player(self.ai_level)
-        game = Game([self, opponent])
-        self.game = game
-        game_engine_thread = threading.Thread(target=game.play)
+        self.game = Game([self, opponent])
+        game_engine_thread = None
+        if previous_dealer is not None:   # Rotate dealer if there was a previous game
+            args = [opponent if previous_dealer == self else self]
+            game_engine_thread = threading.Thread(target=self.game.play, args=args)
+        else:
+            game_engine_thread = threading.Thread(target=self.game.play)
         game_engine_thread.setDaemon(True)
         game_engine_thread.start()
 
@@ -230,16 +238,16 @@ class PgPlayer(Player):
             msg = ""
             if self.state == PgPlayerState.SCORE_CRIB:
                 msg += "Your" if self.my_crib else "Your opponents"
-                msg += " crib was scored - click anywhere above to continue"
+                msg += " crib was scored - click anywhere to continue"
             elif self.state == PgPlayerState.SCORE_HAND:
-                msg += "Your hand was scored - click anywhere above to continue"
+                msg += "Your hand was scored - click anywhere to continue"
             else:
-                msg += "Your opponents hand was scored - click anywhere above to continue"
+                msg += "Your opponents hand was scored - click anywhere to continue"
         elif self.state == PgPlayerState.PLAY and len(self.hand) == 0 and self.num_opp_cards == 0:
             msg = "The cards are all played - we'll count hands in a moment"
         elif self.state == PgPlayerState.GAME_OVER:
             msg = "You" if self.score > self.game.players[1].score else "Your opponent"
-            msg += " won! Click anywhere above to play again"
+            msg += " won! Click anywhere to play again"
         font = pygame.font.Font(None, 32)
         text = font.render(msg, True, WHITE)
         textRect = text.get_rect()
@@ -250,9 +258,7 @@ class PgPlayer(Player):
     def confirm_selection(self, pt):
         right_area = pt[1] < INSTRUCTIONS_Y
         right_state = (self.state == PgPlayerState.LAY_AWAY and self.num_cards_selected == 2) or \
-            (self.state == PgPlayerState.PLAY and self.num_cards_selected == 1) or \
-            (self.state in [PgPlayerState.SCORE_CRIB, PgPlayerState.SCORE_HAND, PgPlayerState.SCORE_OPP_HAND]) or \
-            (self.state == PgPlayerState.GAME_OVER)
+            (self.state == PgPlayerState.PLAY and self.num_cards_selected == 1)
         if right_area and right_state:
             return True
         return False
@@ -268,8 +274,6 @@ class PgPlayer(Player):
     def display_new_game_message(self):
         font = pygame.font.Font(None, 32)
 
-        pygame.draw.rect(self.screen, BLACK, (0, SCORE_Y, SCREEN_WIDTH, CARD_HEIGHT))
-
         y = CRIB_Y
         msgs = ["Welcome to Cribbage.py!", "Difficulty level = " + str(self.ai_level), \
             "Click anywhere to continue", "", "", "", "", "Type 0, 1, or 2 to adjust the difficulty level (0 = easiest)"]
@@ -281,11 +285,29 @@ class PgPlayer(Player):
             textRect.centerx = SCREEN_WIDTH//2
             self.screen.blit(text, textRect)
             y += text.get_height() + GAP//2
+
+    def display_cut_for_deal_message(self):
+        font = pygame.font.Font(None, 32)
+
+        y = SCORE_Y
+        msgs = ["Cut for deal"]
+        if self.opponent_cut_card is not None and self.cut_card is not None:
+            if self.cut_card.rank < self.opponent_cut_card.rank:
+                msgs.append("You drew the lower card so get the first crib")
+            else:
+                msgs.append("Your opponent drew the lower card so gets the first crib")
+            msgs.append ("Click anywhere to continue")
+
+        for msg in msgs:
+            text = font.render(msg, True, WHITE)
+            textRect = text.get_rect()
+            textRect.y = y
+            textRect.centerx = SCREEN_WIDTH//2
+            self.screen.blit(text, textRect)
+            y += text.get_height() + GAP//2
     
     def display_scores(self):
         font = pygame.font.Font(None, 32)
-
-        pygame.draw.rect(self.screen, BLACK, (0, SCORE_Y, SCREEN_WIDTH, CARD_HEIGHT))
         
         if self.score > 121:
             self.score = 121
@@ -331,13 +353,17 @@ class PgPlayer(Player):
 
     # Display the cards to the screen
     def display_cards(self):
-        if self.hand is None or len(self.hand) > 0 and not isinstance (self.hand[0], PgCard):
-            return
-
         x_incr = SCREEN_WIDTH//6 if self.state == PgPlayerState.LAY_AWAY else SCREEN_WIDTH//4
         
         # Show dealers cards
-        if self.state == PgPlayerState.SCORE_OPP_HAND:
+        if self.state == PgPlayerState.CUT_FOR_DEAL and self.cut_card is not None:
+            pgCard = PgCard(self.opponent_cut_card)
+            pgCard.x = SCREEN_WIDTH//4
+            pgCard.y = DEALER_Y
+            pgCard.blit(self.screen)
+        elif self.hand is None or len(self.hand) > 0 and not isinstance (self.hand[0], PgCard):
+            return
+        elif self.state == PgPlayerState.SCORE_OPP_HAND:
             for i in range(len(self.opponent_hand)):
                 pgCard = PgCard(self.opponent_hand[i])
                 pgCard.x = i * x_incr
@@ -351,7 +377,12 @@ class PgPlayer(Player):
                 pgCard.blit(self.screen)
 
         # Show players cards
-        if self.state not in [PgPlayerState.SCORE_OPP_HAND, PgPlayerState.SCORE_CRIB]:
+        if self.state == PgPlayerState.CUT_FOR_DEAL and self.cut_card is not None:
+            pgCard = PgCard(self.cut_card)
+            pgCard.x = SCREEN_WIDTH//4
+            pgCard.y = PLAYER_Y
+            pgCard.blit(self.screen)
+        elif self.state not in [PgPlayerState.SCORE_OPP_HAND, PgPlayerState.SCORE_CRIB]:
             x_pos = 0
             for pgCard in self.hand:
                 pgCard.x = x_pos
@@ -371,7 +402,10 @@ class PgPlayer(Player):
                 pygame.quit()
                 quit()
             elif event.type == pygame.USEREVENT:
-                if event.subtype=="layaway":
+                if event.subtype == "cut_for_deal":
+                    self.q = event.q
+                    assert self.state == PgPlayerState.CUT_FOR_DEAL, "Got a cut_for_deal user event when not in CUT_FOR_DEAL state"
+                elif event.subtype=="layaway":
                     self.state = PgPlayerState.LAY_AWAY
                     self.last_scoring_msg = ""
                     self.q = event.q
@@ -405,25 +439,28 @@ class PgPlayer(Player):
                     self.state = PgPlayerState.GAME_OVER
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if self.state == PgPlayerState.NEW_GAME:
-                    self.start_new_game()
-                    continue
                 pt = pygame.mouse.get_pos()
-                if len(self.hand) > 0 and isinstance (self.hand[0], PgCard):
+                # A user click in the NEW_GAME state starts a new game
+                if self.state in [PgPlayerState.NEW_GAME, PgPlayerState.GAME_OVER]:
+                    self.start_new_game()
+                    self.state = PgPlayerState.CUT_FOR_DEAL
+                # A user click in one of these states continues program execution
+                elif self.state in [PgPlayerState.CUT_FOR_DEAL, PgPlayerState.SCORE_HAND, PgPlayerState.SCORE_OPP_HAND, PgPlayerState.SCORE_CRIB]:
+                    self.q.put(None)
+                # A click on one of these states might either be card selection, or confirmation of selected cards
+                elif self.state in [PgPlayerState.PLAY, PgPlayerState.LAY_AWAY]:
                     for pgCard in self.hand:
                         if pgCard.contains_point(pt):
                             if self.state == PgPlayerState.LAY_AWAY or \
                                     (self.state == PgPlayerState.PLAY and pgCard.points + self.discards.sum <= 31):
                                 pgCard.selected = not pgCard.selected
-                if self.confirm_selection (pt):
-                    if self.state == PgPlayerState.PLAY:
-                        self.made_play = True
-                    elif self.state == PgPlayerState.LAY_AWAY:
-                        self.state = PgPlayerState.PLAY
-                    elif self.state == PgPlayerState.GAME_OVER:
-                        self.start_new_game()
-                    if self.state != PgPlayerState.GAME_OVER:
+                    if self.confirm_selection (pt):
+                        if self.state == PgPlayerState.PLAY:
+                            self.made_play = True
+                        elif self.state == PgPlayerState.LAY_AWAY:
+                            self.state = PgPlayerState.PLAY
                         self.q.put(None)
+   
             elif self.state == PgPlayerState.NEW_GAME and event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_0:
                     self.ai_level = 0
@@ -435,6 +472,10 @@ class PgPlayer(Player):
             self.screen.fill(BLACK)
             if self.state == PgPlayerState.NEW_GAME:
                 self.display_new_game_message()
+            elif self.state == PgPlayerState.CUT_FOR_DEAL:
+                self.display_cut_for_deal_message()
+                self.display_cards()
+                self.display_crib()
             elif self.state == PgPlayerState.GAME_OVER:
                 self.display_scores()
                 self.display_message()
@@ -490,7 +531,7 @@ class PgPlayer(Player):
                 self.post_event(pygame.event.Event(pygame.USEREVENT, subtype=subtype, player=notification.player, msg=msg), 2)
             else:
                 q = Queue()
-                self.post_event(pygame.event.Event(pygame.USEREVENT, subtype=subtype, player=notification.player, msg=msg, q=q), 2)
+                self.post_event(pygame.event.Event(pygame.USEREVENT, subtype=subtype, player=notification.player, msg=msg, q=q), 0)
                 q.get()
         elif notification.type == NotificationType.GO:
             msg = "You said 'go'" if notification.player == self else "Opponent said 'go'"
@@ -499,8 +540,14 @@ class PgPlayer(Player):
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="game_over"), 0)
             # TODO - make sure deal rotates in the next game
         elif notification.type == NotificationType.CUT_FOR_DEAL:
-            pass    # TODO - implement GUI for cut-for-deal within the NEW_GAME home screen
-            
+            if notification.player == self:
+                self.cut_card = notification.data
+            else:
+                self.opponent_cut_card = notification.data
+            if self.cut_card is not None and self.opponent_cut_card is not None:
+                q = Queue()
+                self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="cut_for_deal", q=q), 0)
+                q.get()
 
 # Play the game
 player = PgPlayer()

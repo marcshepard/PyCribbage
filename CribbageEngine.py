@@ -305,7 +305,7 @@ class Notification:
         if self.type == NotificationType.NEW_GAME:
             return "A new game has started between " + self.data
         if self.type == NotificationType.CUT_FOR_DEAL:
-            return self.player.name + " cut the " + self.data
+            return self.player.name + " cut the " + str(self.data)
         elif self.type == NotificationType.DEAL:
             return "\n" + self.player.name + " dealt the cards and will have the crib"
         elif self.type == NotificationType.STARTER_CARD:
@@ -371,7 +371,7 @@ class Game:
         self.notify_all(Notification(NotificationType.POINTS, player, points, reason))
 
     # Start a new game; that means intros and cut for deal
-    def start_game (self) -> None:
+    def start_game (self, initial_dealer : Player = None) -> None:
         # Reset the players scores for a new game
         self.players.reset()
 
@@ -381,21 +381,28 @@ class Game:
         # Create a deck and cut for deal
         self.deck = Deck()
         self.deck.shuffle()
-        dealer = None
-        lowestCutRank = 15
-        for player in self.players:
-            card = self.deck.cut_a_card()
-            while card.rank == lowestCutRank:
+
+        # Cut for deal unless explicit dealer was specified
+        if initial_dealer is not None:
+            self.initial_dealer = initial_dealer
+            self.players.set_dealer(initial_dealer)
+        else:
+            dealer = None
+            lowestCutRank = 15
+            for player in self.players:
                 card = self.deck.cut_a_card()
-            self.notify_all (Notification (NotificationType.CUT_FOR_DEAL, player, 0, str(card)))
-            if card.rank < lowestCutRank:
-                lowestCutRank = card.rank
-                dealer = player
-        self.players.set_dealer(dealer)
+                while card.rank == lowestCutRank:
+                    card = self.deck.cut_a_card()
+                self.notify_all (Notification (NotificationType.CUT_FOR_DEAL, player, 0, card))
+                if card.rank < lowestCutRank:
+                    lowestCutRank = card.rank
+                    dealer = player
+            self.players.set_dealer(dealer)
+            self.initial_dealer = dealer
 
     # Start a new round; deal, create crib, cut starter card 
     def start_round (self) -> None:
-        # Deal the cards, convert the dealt Cards.hands into Cribbage.Hands and give a hand to each player
+        # Deal the cards
         self.deck = Deck()
         self.deck.shuffle()
         for player in self.players:
@@ -721,8 +728,8 @@ class Game:
         return points
 
     # The main loop to play a game
-    def play (self):
-        self.start_game()                   # Intros and cut for deal
+    def play (self, dealer : Player = None):
+        self.start_game(dealer)             # Intros and cut for deal
 
         while not self.game_over:           # Deal new rounds until the game is over
             self.start_round()              # Deal, discard to crib, draw starter card, mark person to left of dealer for first turn
