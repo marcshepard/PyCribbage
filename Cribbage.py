@@ -23,6 +23,7 @@ Both use PyGames USERDEFINED events for the engine to send info to the GUI.
 
 import threading
 import pygame
+from pygame.constants import K_0, K_1, K_2
 from pygame.event import Event
 from CribbageEngine import Card, Hand, Player, Notification, NotificationType, Game, get_player
 from enum import Enum, auto
@@ -94,6 +95,7 @@ class PgCard(Card):
         return self.y + CARD_HEIGHT//2
 
 class PgPlayerState(Enum):
+    NEW_GAME    = auto()    # New game started
     LAY_AWAY    = auto()    # Player needs to discard two cards to the crib
     PLAY        = auto()    # Player needs to play a pegging card
     SCORE_HAND  = auto()    # Scoring the players hand
@@ -113,15 +115,16 @@ class PgPlayer(Player):
         self.last_scoring_msg = None
         self.made_play = False
         self.event = threading.Event()
+        self.ai_level = 2
         pygame.init()
 
     # Play a game, or start a new game
     def play(self, level : int = 1):
-        self.start_new_game(level)
+        self.state = PgPlayerState.NEW_GAME
         self.ux_event_loop()
 
     # Start another game
-    def start_new_game(self, level : int = 1):
+    def start_new_game(self):
         # Reset some state
         super().reset()
         self.state = PgPlayerState.OTHER
@@ -129,7 +132,7 @@ class PgPlayer(Player):
         self.made_play = False
         
         # Create a game, and launch as a daemon thread so it exits if the main UI exits
-        opponent = get_player(level)
+        opponent = get_player(self.ai_level)
         game = Game([self, opponent])
         self.game = game
         game_engine_thread = threading.Thread(target=game.play)
@@ -262,6 +265,23 @@ class PgPlayer(Player):
                 num_cards_selected += 1
         return num_cards_selected
 
+    def display_new_game_message(self):
+        font = pygame.font.Font(None, 32)
+
+        pygame.draw.rect(self.screen, BLACK, (0, SCORE_Y, SCREEN_WIDTH, CARD_HEIGHT))
+
+        y = CRIB_Y
+        msgs = ["Welcome to Cribbage.py!", "Difficulty level = " + str(self.ai_level), \
+            "Click anywhere to continue", "", "", "", "", "Type 0, 1, or 2 to adjust the difficulty level (0 = easiest)"]
+
+        for msg in msgs:
+            text = font.render(msg, True, WHITE)
+            textRect = text.get_rect()
+            textRect.y = y
+            textRect.centerx = SCREEN_WIDTH//2
+            self.screen.blit(text, textRect)
+            y += text.get_height() + GAP//2
+    
     def display_scores(self):
         font = pygame.font.Font(None, 32)
 
@@ -353,6 +373,7 @@ class PgPlayer(Player):
             elif event.type == pygame.USEREVENT:
                 if event.subtype=="layaway":
                     self.state = PgPlayerState.LAY_AWAY
+                    self.last_scoring_msg = ""
                     self.q = event.q
                     pgHand = Hand()
                     for card in self.hand:
@@ -384,6 +405,9 @@ class PgPlayer(Player):
                     self.state = PgPlayerState.GAME_OVER
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
+                if self.state == PgPlayerState.NEW_GAME:
+                    self.start_new_game()
+                    continue
                 pt = pygame.mouse.get_pos()
                 if len(self.hand) > 0 and isinstance (self.hand[0], PgCard):
                     for pgCard in self.hand:
@@ -400,15 +424,25 @@ class PgPlayer(Player):
                         self.start_new_game()
                     if self.state != PgPlayerState.GAME_OVER:
                         self.q.put(None)
+            elif self.state == PgPlayerState.NEW_GAME and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_0:
+                    self.ai_level = 0
+                elif event.key == pygame.K_1:
+                    self.ai_level = 1
+                elif event.key == pygame.K_2:
+                    self.ai_level = 2
 
             self.screen.fill(BLACK)
-            self.display_scores()
-            if self.state == PgPlayerState.GAME_OVER:
-                pass
+            if self.state == PgPlayerState.NEW_GAME:
+                self.display_new_game_message()
+            elif self.state == PgPlayerState.GAME_OVER:
+                self.display_scores()
+                self.display_message()
             else:
+                self.display_scores()
                 self.display_cards()
                 self.display_crib()
-            self.display_message()
+                self.display_message()
             pygame.display.flip()
 
     def select_lay_aways(self, my_crib : bool):
@@ -463,9 +497,9 @@ class PgPlayer(Player):
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="points", msg=msg), 2)
         elif notification.type == NotificationType.GAME_OVER:
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="game_over"), 0)
+            # TODO - make sure deal rotates in the next game
         elif notification.type == NotificationType.CUT_FOR_DEAL:
-            pass    # TODO - implement GUI for this
-            #  TODO - also implement home screen that includes logic to pick opponent level
+            pass    # TODO - implement GUI for cut-for-deal within the NEW_GAME home screen
             
 
 # Play the game
