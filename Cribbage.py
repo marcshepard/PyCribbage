@@ -1,10 +1,32 @@
-import CribbageEngine as Cribbage
-import pygame
+"""
+py - The entry point for the cribbage game
+
+The main logic for cribbage play is in CribbageEngine.py, which orchestrates play between two Players (it supplies
+player classes for various levels of AI play).
+
+This module implements a subclass of CribbageEngine.Player for the interactive player, and provides that player
+a GUI written in PyGames.
+
+It is multi-threaded, where the UX event loop runs in the foreground and the engine itself runs as a daemon background
+thread. This design allows for
+* The engine to run without causing the UX to become non-responsive
+* The app to exit gracefully when the UX is closed, regardless of the state of the engine
+
+Some interactions between game and engine are synchronous; in particualr, we don't want the engine to continue until
+the user has had time to review and acknolege the computed hand scores. Others are asynch but with a delay; e.g., pegging
+score notifications should not block game play but should be displayed in the UX for a couple of seconds
+Both use PyGames USERDEFINED events for the engine to send info to the GUI.
+* In the former case, the event also includes a Queue that the engine blocks on; the UX puts a message in the queue to
+  unblock the engine thread when the user is ready to continue.
+* In the later case, the engine thread simply waits a couple of seconds after sending the event 
+"""
+
 import threading
-from Cards import Card, Hand
+import pygame
+from pygame.event import Event
+from CribbageEngine import Card, Hand, Player, Notification, NotificationType, Game, get_player
 from enum import Enum, auto
 from typing import Tuple
-from pygame.event import Event
 from queue import Queue
 from typing import Final
 from sys import argv
@@ -24,11 +46,11 @@ BLACK : Final = (0, 0, 0)
 
 """
 PgCard - a card to display on the screen
+
+To improve performance, a dictionary is used to ensure a given card image is loaded at most once
 """
 class PgCard(Card):
-    _RANK_NAMES : Final = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"]
-    _SUIT_NAMES : Final = ["clubs", "diamonds", "hearts", "spades"]
-    _dict = {}
+    _dict = {}  # Dictionary of already-loaded card images; initially empty
 
     def __init__(self, card: Card):
         if card is not None:
@@ -83,7 +105,7 @@ class PgPlayerState(Enum):
 """
 PgPlayer - PyGame GUID for the logged in user
 """
-class PgPlayer(Cribbage.Player):
+class PgPlayer(Player):
     def __init__(self):
         super().__init__()
         self.name = "You"
@@ -106,15 +128,9 @@ class PgPlayer(Cribbage.Player):
         self.last_scoring_msg = None
         self.made_play = False
         
-        # Select opponent
-        opponent = None
-        if level == 0:
-            opponent = Cribbage.EasyComputerPlayer()
-        else:
-            opponent = Cribbage.StandardComputerPlayer()
-
         # Create a game, and launch as a daemon thread so it exits if the main UI exits
-        game = Cribbage.Game([self, opponent])
+        opponent = get_player(level)
+        game = Game([self, opponent])
         self.game = game
         game_engine_thread = threading.Thread(target=game.play)
         game_engine_thread.setDaemon(True)
@@ -423,8 +439,8 @@ class PgPlayer(Cribbage.Player):
         discards.add_card(card)
         return card            
 
-    def notify(self, notification : Cribbage.Notification):
-        if notification.type == Cribbage.NotificationType.PLAY:
+    def notify(self, notification : Notification):
+        if notification.type == NotificationType.PLAY:
             msg = ""
             if notification.player == self:
                 msg = "You played the " + notification.data
@@ -433,7 +449,7 @@ class PgPlayer(Cribbage.Player):
             if notification.points > 0:
                 msg += " for " + str(notification.points)
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="points", msg=msg), 2)
-        elif notification.type in [Cribbage.NotificationType.POINTS, Cribbage.NotificationType.SCORE_HAND, Cribbage.NotificationType.SCORE_CRIB]:
+        elif notification.type in [NotificationType.POINTS, NotificationType.SCORE_HAND, NotificationType.SCORE_CRIB]:
             msg = ("You " if notification.player == self else "Opponent") + " scored +" + str(notification.points) + ": " + notification.data
             subtype = str(notification.type).lower().replace("notificationtype.", "")
             if subtype == "points":
@@ -442,12 +458,12 @@ class PgPlayer(Cribbage.Player):
                 q = Queue()
                 self.post_event(pygame.event.Event(pygame.USEREVENT, subtype=subtype, player=notification.player, msg=msg, q=q), 2)
                 q.get()
-        elif notification.type == Cribbage.NotificationType.GO:
+        elif notification.type == NotificationType.GO:
             msg = "You said 'go'" if notification.player == self else "Opponent said 'go'"
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="points", msg=msg), 2)
-        elif notification.type == Cribbage.NotificationType.GAME_OVER:
+        elif notification.type == NotificationType.GAME_OVER:
             self.post_event(pygame.event.Event(pygame.USEREVENT, subtype="game_over"), 0)
-        elif notification.type == Cribbage.NotificationType.CUT_FOR_DEAL:
+        elif notification.type == NotificationType.CUT_FOR_DEAL:
             pass    # TODO - implement GUI for this
             #  TODO - also implement home screen that includes logic to pick opponent level
             

@@ -6,28 +6,19 @@ Prereqs: A Windows 10 PC with Python 3.9 (or later) and PyGames installed
 * A familiarity with the rules of cribbage: https://bicyclecards.com/how-to-play/cribbage/
 
 To play:copy this git locally, and then either:
-* Launch from file explorer
-* Launch cmd and run "python CribbageUx.py"
-* Launch the python app, and type:
+* Launch from file explorer by double-clicking on Cribbage.py
+* Launch cmd and run "python Cribbage.py"
+* Launch the python app and type:
     from os import chdir
     chdir("<path>")     # Where <path> is the full local path; make sure to escape the "\" (to "\\" with the string)
     import CribbageUx
 
-Known bugs:
-* None
+There are three modules:
+* CribbageEngine.py - the engine that implements play, as well as some AI players
+* TestHarness.py - tests the engine, and can also run tournaments between the AIs
+* Cribbage.py - GUI for interactive play, written in PyGames
 
-Backlog of work items:
-* Add list of bugs and backlog items to github (and remove from this README)
-* Add expert computer mode play:
-    * Estimating the starter card when discarding
-    * Consider opponent "counter-pegging" options when pegging
-* Add "home screen" GUI to pick opponent level
-* Add GUI for "cut for deal" (internally it is being done - just not exposed in UX)
-* Add statistics; wins/losses, avg crib, hand, pegging points
-* Add super-expert mode
-    * Includes data-driven play based on stats data (prereq - hosted telemetry stats)
-* Add UX for "recommended play"
-* Rewrite as web hosted app for xplat (and to learn)
-* Rewrite in unity for xplat (and to learn)
+Known bugs and issues: https://github.com/marcshepard/PyCribbage/issues
+
 
 
