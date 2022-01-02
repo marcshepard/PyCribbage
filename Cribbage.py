@@ -132,6 +132,8 @@ class PgPlayer(Player):
         self.made_play = False
         self.cut_card = None
         self.opponent_cut_card = None
+        self.last_selected_card_ix = -1
+        self.last_selected_layaways = ""
 
         # Get previous dealer, if there was one
         previous_dealer = self.game.initial_dealer if self.game is not None else None
@@ -375,7 +377,7 @@ class PgPlayer(Player):
             pgCard.x = SCREEN_WIDTH//4
             pgCard.y = DEALER_Y
             pgCard.blit(self.screen)
-        elif self.hand is None or len(self.hand) > 0 and not isinstance (self.hand[0], PgCard):
+        elif self.state in [PgPlayerState.SCORE_CRIB, PgPlayerState.SCORE_HAND] or self.hand is None or (len(self.hand) > 0 and not isinstance (self.hand[0], PgCard)):
             return
         elif self.state == PgPlayerState.SCORE_OPP_HAND:
             for i in range(len(self.opponent_hand)):
@@ -514,7 +516,7 @@ class PgPlayer(Player):
         assert len(cards) == 2, "Layaways were confirmed - but there are not 2 selected"
         return self.hand.play_card(cards[0], True), self.hand.play_card(cards[1], True)
 
-    def select_play(self, starter, discards):
+    def select_play(self, starter, discards, num_opp_cards):
         self.made_play = False
         hand = self.hand
         q = Queue()
@@ -567,27 +569,69 @@ class PgPlayer(Player):
 
     # Figure out what cards the advanced AI player would play, compare to player selection, and return a hint
     def comment_on_layaway_selection(self):
-        # Find out what cards the AI would lay away to the crib
-        cards = AdvancedPlayer.find_lay_aways (self.hand, self.my_crib)
+        comment = "Nice choice."
         
-        # Compare them to the cards the player selected
+        # Find out which cards the user selected, and what hand they would have left
+        last_selected_layaways = ""
+        crib = []
+        hand = Hand()
         for card in self.hand:
             if card.selected:
-                if card not in cards:
-                    return "Are you sure?"
-        return "Nice choice."
+                crib.append(card)
+                last_selected_layaways += str(card) + ", "
+            else:
+                hand.add_card(card)
+
+        if self.last_selected_layaways == last_selected_layaways:
+            return self.last_selected_layaways_comment
+
+        # Find out what cards the AI would have selected
+        card1, card2, expected_value = AdvancedPlayer.find_lay_aways (self.hand, self.my_crib)
+
+        # Compare the scores of the two
+        selected_value = AdvancedPlayer.expected_value(hand, crib, self.my_crib)
+        if selected_value < expected_value:
+            comment = "Are you sure?"
+        
+        print ("\nExpected value of this choice is " + str(selected_value))
+        self.last_selected_layaways = last_selected_layaways
+        self.last_selected_layaways_comment = comment
+
+        return comment
     
     # Figure out what card the advanced AI player would play, compare to player selection, and return a hint
     def comment_on_play_selection(self):
+        selected_card_ix = None
+        for card_ix in range (len(self.hand)):
+            if self.hand[card_ix].selected:
+                selected_card_ix = card_ix
+
+        if selected_card_ix == self.last_selected_card_ix and len(self.hand) == self.last_hand_len:
+            return self.last_selected_card_comment
+
+        comment = "Nice choice."
         # Find out what card the AI would play to the pegging pile
-        recommended_card = AdvancedPlayer.find_play (self.hand, self.starter, self.discards) 
+        card_scores, max_score = AdvancedPlayer.find_play (self.hand, self.starter, self.discards, self.num_opp_cards) 
         
         # Compare it to the card the player selected
-        for card in self.hand:
-            if card.selected:
-                if card != recommended_card:
-                    return "Are you sure?"        
-        return "Nice choice."
+        if card_scores[selected_card_ix] != max_score:
+            comment = "Are you sure?"
+
+        self.last_selected_card_ix = selected_card_ix
+        self.last_selected_card_comment = comment
+        self.last_hand_len = len(self.hand)
+
+        # Print the rankings to the console if there is more than 1 playable card
+        if len(card_scores) > 1:
+            list = []
+            for i in range(len(card_scores)):
+                list.append([card_scores[i], str(self.hand[i])])
+            list = sorted(list, key=lambda x: x[0], reverse=True)
+            print ("\nExpected point value of each card:")
+            for member in list:
+                print (member[1] + ": " + str(member[0]))
+
+        return comment
 
 
 # Play the game

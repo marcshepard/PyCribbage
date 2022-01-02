@@ -168,6 +168,11 @@ class Discards:
         self._hand.add_card(card)
         self.sum += points
 
+    # Pop the last added card (only used for algos)
+    def pop (self) -> None:
+        card = self._hand.pop(len(self._hand) - 1)
+        self.sum -= card.points
+
     # Start a new pile by discarding all the cards on the current pile
     def start_new_pile (self) -> None:
         while len(self._hand) > 0:
@@ -208,7 +213,7 @@ class Player:
         pass
 
     @abstractmethod
-    def select_play(self, starter : Card, discards : Discards) -> Card:
+    def select_play(self, starter : Card, discards : Discards, num_opp_cards : int) -> Card:
         pass
 
     @abstractmethod
@@ -448,7 +453,8 @@ class Game:
         if self.discards.sum + player.hand[0].points <= 31:
             num_cards_to_play = len(player.hand)
             discard_sum = self.discards.sum
-            card = player.select_play(self.starter, self.discards)
+            num_opp_cards = len(self.players[0].hand) if player == self.players[0] else len(self.players[1].hand)
+            card = player.select_play(self.starter, self.discards, num_opp_cards)
             assert len(player.hand) == num_cards_to_play - 1, "Player didn't play a card!"
             assert discard_sum != self.discards.sum, "Player didn't put their play card on the discard pile!"
             self.last_to_peg = player
@@ -711,6 +717,7 @@ class Game:
             points += 2 * comb(in_a_row, 2)
 
         if len(discards) >= 2:
+            run_points = 0
             for i in range (len(discards) - 1):
                 check_for_run = [card_rank]
                 for j in range (i, len(discards)):
@@ -724,7 +731,10 @@ class Game:
                         break
                     last_card = check_for_run[k]
                 if is_run:
-                    points += len(check_for_run)
+                    run_points = len(check_for_run)
+                    break
+        
+            points += run_points
 
         return points
 
@@ -766,7 +776,7 @@ class BeginerPlayer(Player):
     def select_lay_aways(self, my_crib : bool) -> Tuple[Card, Card]:
         return self.hand.play_card(str(self.hand[5]), True), self.hand.play_card(str(self.hand[4]), True)
 
-    def select_play(self, starter, discards) -> Card:
+    def select_play(self, starter, discards, num_opp_cards) -> Card:
         hand = self.hand
         card = hand.play_card(str(hand[0]))
         discards.add_card(card)
@@ -861,7 +871,7 @@ class IntermediatePlayer(Player):
         return self.hand.play_card(str(card1), True), self.hand.play_card(str(card2), True)
 
     # Do the pegging play that gives the highest score. If a tie, play the highest allowed card
-    def select_play(self, starter : Card, discards : Discards) -> Card:
+    def select_play(self, starter : Card, discards : Discards, num_opp_cards : int) -> Card:
         hand = self.hand
         points_per_card = [-1]*len(hand)
         max_points = 0
@@ -911,7 +921,7 @@ class AdvancedPlayer(Player):
         for card in hand:
             num_cards -= 1
             num_suits[card.suit] -= 1
-        for card in hand:
+        for card in crib:
             num_cards -= 1
             num_suits[card.suit] -= 1
 
@@ -945,8 +955,6 @@ class AdvancedPlayer(Player):
         # Next, create variables to compute the starter will be of a given rank
         num_ranks = [4]*14
         num_ranks[0] = 0
-        for card in hand:
-            num_ranks[card.rank] -= 1
         for card in hand:
             num_ranks[card.rank] -= 1
 
@@ -990,7 +998,7 @@ class AdvancedPlayer(Player):
         return points
 
     # Find which cards are the best crib lay-aways (card points +/- discard points)
-    def find_lay_aways(hand : Hand, my_crib : bool) -> Tuple[Card, Card]:
+    def find_lay_aways(hand : Hand, my_crib : bool) -> Tuple[Card, Card, int]:
         crib = Hand()
         max_points = 0
         card1 = None
@@ -1015,36 +1023,72 @@ class AdvancedPlayer(Player):
                 crib.pop(0)
                 crib.pop(0)
         
-        return card1, card2
+        return card1, card2, max_points
 
     # Select discards resulting in the highest net points (card points +/- discard points)
     def select_lay_aways(self, my_crib : bool) -> Tuple[Card, Card]:
-        card1, card2 = AdvancedPlayer.find_lay_aways(self.hand, my_crib)
+        card1, card2, value = AdvancedPlayer.find_lay_aways(self.hand, my_crib)
         return self.hand.play_card(str(card1), True), self.hand.play_card(str(card2), True)
 
     # Find the pegging play that gives the highest score. If a tie, select the highest allowed card
-    def find_play(hand : Hand, starter : Card, discards : Discards) -> Card:
-        points_per_card = [-1]*len(hand)
-        max_points = 0
+    # We'll evaluate immediate pegging points gained - probability of a maximal counter-peg
+    def find_play(hand : Hand, starter : Card, discards : Discards, num_opp_cards : int) -> Tuple[Tuple[int], int]:
+        points_per_card = [-1000]*len(hand)
+        max_points = -1000
+        
+        # Skip all the eval logic if there is only one possible play
+        if len(hand) == 1:
+            points_per_card[0] = max_points = 1
+            return points_per_card, max_points
+
+        # Now get probability that opponents has a given card in their hand
+        num_ranks = []
+        num_remaining_cards = 52
+        if num_opp_cards > 0:
+            num_ranks = [4]*14
+            for card in hand:
+                num_ranks[card.rank] -= 1
+                num_remaining_cards -= 1
+            for card in discards:
+                num_ranks[card.rank] -= 1
+                num_remaining_cards -= 1
+            num_ranks[starter.rank] -= 1
+            num_remaining_cards -= 1
+        # OK - at this point, the probability of opponent having card with rank r is approximately:
+        #   num_opp_cards * num_ranks[r]/num_remaining_cards
+
         for i in range(len(hand) - 1, -1, -1):
             if discards.sum + hand[i].points > 31:
-                points_per_card[i] = -1
                 continue
-            points_per_card[i] = Game.calculate_pegging_points(hand[i].rank, discards)
+            peg_points = Game.calculate_pegging_points(hand[i].rank, discards)
+            counter_peg_points = 0
+            points_left = 31 - discards.sum - hand[i].points    # How many points are left for counter-pegging?
+            if num_opp_cards > 0 and points_left > 0:
+                discards.add_card (Card(Suit.SPADES, hand[i].rank)) # Temporarily add card to discards pile
+                max_rank = 13 if points_left >= 10 else points_left
+                for r in range(1, max_rank + 1):
+                    p = Game.calculate_pegging_points(r, discards)
+                    #counter_peg_points += p * num_opp_cards * (num_ranks[r]/num_remaining_cards) / 2
+                    counter_peg_points += p * num_ranks[r]/num_remaining_cards
+                discards.pop()                                      # Pop card off discard pile
+            points_per_card[i] = peg_points - counter_peg_points
             if points_per_card[i] > max_points:
                 max_points = points_per_card[i]
 
-        for i in range(len(hand) - 1, -1, -1):
-            if points_per_card[i] == max_points:
-                return hand[i]
-        assert False, "Couldn't select a card to play"
+        return points_per_card, max_points
 
     # Select the pegging play that gives the highest score. If a tie, play the highest allowed card
-    def select_play(self, starter : Card, discards : Discards) -> Card:
-        card = AdvancedPlayer.find_play(self.hand, starter, discards)
-        self.hand.play_card(card)
-        discards.add_card(card)
-        return card
+    def select_play(self, starter : Card, discards : Discards, num_opp_cards : int) -> Card:
+        points_per_card, max_points = AdvancedPlayer.find_play(self.hand, starter, discards, num_opp_cards)
+
+        for i in range(len(self.hand) - 1, -1, -1):
+            if points_per_card[i] == max_points:
+                card = self.hand[i]
+                self.hand.play_card(card)
+                discards.add_card(card)
+                return card
+
+        assert False, "Couldn't select a card to play"
 
     def notify(self, notification : Notification) -> None:
         pass
@@ -1062,7 +1106,7 @@ def get_player(level : int) -> Player:
 
 # A utility method to let two AIs battle each other
 def play_match(player0 : Player, player1 : Player, num_games : int) -> None:
-    print ("A match of " + str(num_games) + " between " + player0.name + " and " + player1.name)
+    print ("A match to " + str(num_games) + " between " + player0.name + " and " + player1.name)
     player0_wins = 0
     player1_wins = 0
     start_time = time()
@@ -1082,4 +1126,4 @@ def play_match(player0 : Player, player1 : Player, num_games : int) -> None:
     print ("The match took " + str(total_time) + " seconds (" + str(total_time/num_games) + " seconds/game)")
 
 # Here's how to see the effectiveness of one AI against another
-#play_match (CribbageEngine.AdvancedPlayer(), CribbageEngine.BeginerPlayer(), 50)
+#play_match (AdvancedPlayer(), IntermediatePlayer(), 100)
