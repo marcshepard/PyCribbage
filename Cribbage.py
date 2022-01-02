@@ -370,6 +370,8 @@ class PgPlayer(Player):
         # No need to display anything if we are scoring the crib
         if self.state == PgPlayerState.SCORE_CRIB:
             return
+
+        pg_hands_initialized = self.hand is not None and len(self.hand) > 0 and isinstance (self.hand[0], PgCard)
         
         # Show dealers cards
         if self.state == PgPlayerState.CUT_FOR_DEAL and self.cut_card is not None:
@@ -377,15 +379,13 @@ class PgPlayer(Player):
             pgCard.x = SCREEN_WIDTH//4
             pgCard.y = DEALER_Y
             pgCard.blit(self.screen)
-        elif self.state in [PgPlayerState.SCORE_CRIB, PgPlayerState.SCORE_HAND] or self.hand is None or (len(self.hand) > 0 and not isinstance (self.hand[0], PgCard)):
-            return
         elif self.state == PgPlayerState.SCORE_OPP_HAND:
             for i in range(len(self.opponent_hand)):
                 pgCard = PgCard(self.opponent_hand[i])
                 pgCard.x = i * x_incr
                 pgCard.y = DEALER_Y
                 pgCard.blit(self.screen)
-        else:
+        elif self.state != PgPlayerState.SCORE_HAND and pg_hands_initialized:
             for i in range(self.num_opp_cards):
                 pgCard = PgCard(None)
                 pgCard.x = i * x_incr
@@ -398,7 +398,7 @@ class PgPlayer(Player):
             pgCard.x = SCREEN_WIDTH//4
             pgCard.y = PLAYER_Y
             pgCard.blit(self.screen)
-        elif self.state not in [PgPlayerState.SCORE_OPP_HAND, PgPlayerState.SCORE_CRIB]:
+        elif self.state not in [PgPlayerState.SCORE_OPP_HAND, PgPlayerState.SCORE_CRIB] and pg_hands_initialized:
             x_pos = 0
             for pgCard in self.hand:
                 pgCard.x = x_pos
@@ -635,5 +635,13 @@ class PgPlayer(Player):
 
 
 # Play the game
+if len(argv) >= 1:
+    file = argv[0]
+    cwd = getcwd()
+    dir = path.dirname(file)
+    if not path.isabs(dir):
+        dir = cwd + "\\" + dir
+    chdir(dir)
+
 player = PgPlayer()
 player.play()
