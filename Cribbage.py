@@ -80,8 +80,8 @@ class PgCard(Card):
     def blit (self, screen):
         img = self.img
         if self.selected:
-            new_height = img.get_height() * 1.2 // 1
-            new_width = img.get_width() * 1.2 // 1
+            new_height = int(img.get_height() * 1.2 // 1)
+            new_width = int(img.get_width() * 1.2 // 1)
             img = pygame.transform.scale(img, (new_width, new_height))
 
         rect = img.get_rect()
