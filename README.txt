@@ -1,17 +1,13 @@
 A game of cribbage
 
-Prereqs: A Windows 10 PC with Python 3.9 (or later) and PyGames installed
-* To instal Python: https://www.python.org/downloads/
-* To instal pygames: from cmd prompt - pip install pygames
+Prereqs:
 * A familiarity with the rules of cribbage: https://bicyclecards.com/how-to-play/cribbage/
+* A Windows 10 PC with Python 3.9 (or later) and PyGames installed
+    * To instal Python: https://www.python.org/downloads/
+    * To instal pygames: from cmd prompt - pip install pygames
+* A local copy of these files - best to just clone this git:
 
-To play:copy this git locally, and then either:
-* Launch from file explorer by double-clicking on Cribbage.py
-* Launch cmd and run "python Cribbage.py"
-* Launch the python app and type:
-    from os import chdir
-    chdir("<path>")     # Where <path> is the full local path; make sure to escape the "\" (to "\\" with the string)
-    import CribbageUx
+To play: launch Cribbage.py (e.g., by double-clicking on it from file explorer)
 
 There are three modules:
 * CribbageEngine.py - the engine that implements play, as well as some AI players

@@ -227,7 +227,7 @@ Includes method to set/rotate dealers, and set/rotate whose turn it is to play w
 The first turn after the deal is the player right after the dealer
 """
 class Players:
-    def __init__ (self, players : list[Player]):
+    def __init__ (self, players : List[Player]):
         if len(players) < 2:
             raise ValueError ("players list must have at least 2 elements")
         self._players = players

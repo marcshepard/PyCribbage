@@ -23,7 +23,6 @@ Both use PyGames USERDEFINED events for the engine to send info to the GUI.
 
 import threading
 import pygame
-from pygame.constants import K_0, K_1, K_2
 from pygame.event import Event
 from CribbageEngine import AdvancedPlayer, Card, Hand, Player, Notification, NotificationType, Game, get_player
 from enum import Enum, auto
