@@ -56,9 +56,9 @@ class PgCard(Card):
         if card is not None:
             super().__init__(card.suit, card.rank)
         self._card = card
-        img_name = "images\\back.png"
+        img_name = "Images" + path.sep + "back.png"
         if card is not None:
-            img_name = "images\\" + PgCard._RANK_NAMES[card.rank - 1] + "_of_" + PgCard._SUIT_NAMES[card.suit] + ".png"
+            img_name = "Images" + path.sep + PgCard._RANK_NAMES[card.rank - 1] + "_of_" + PgCard._SUIT_NAMES[card.suit] + ".png"
         img = None
         if img_name not in self._dict.keys():
             img = pygame.image.load(img_name)
@@ -633,14 +633,15 @@ class PgPlayer(Player):
         return comment
 
 
-# Play the game
+# Change to the same directory as Cribbage.py so paths to other files work
 if len(argv) >= 1:
-    file = argv[0]
-    cwd = getcwd()
-    dir = path.dirname(file)
-    if not path.isabs(dir):
-        dir = cwd + "\\" + dir
-    chdir(dir)
+    dir = path.dirname(argv[0])
+    if len(dir) > 0:
+      if not path.isabs(dir):
+          cwd = getcwd()
+          dir = cwd + path.sep + dir
+      chdir(dir)
 
+# Play the game
 player = PgPlayer()
 player.play()
