@@ -32,8 +32,8 @@ from typing import Final
 from sys import argv
 from os import chdir, path, getcwd
 
-SCREEN_WIDTH : Final = 400
-SCREEN_HEIGHT : Final = 600
+SCREEN_WIDTH : Final = 600
+SCREEN_HEIGHT : Final = 800
 CARD_HEIGHT : Final = SCREEN_HEIGHT//5
 GAP : Final = 30
 SCORE_Y : Final = GAP//2
@@ -191,7 +191,7 @@ class PgPlayer(Player):
 
         # Discard pile (or crib during crib scoring) on the right
         if self.state == PgPlayerState.PLAY:
-            x_inc = 40
+            x_inc = 30
             card_num = 0
             for card in self.discards:
                 pg_card = PgCard(card)
@@ -203,7 +203,7 @@ class PgPlayer(Player):
             x_pos = 2*SCREEN_WIDTH//3
             if x_pos < 10 + SCREEN_WIDTH//4 + x_inc * len(self.discards):
                 x_pos = 10 + SCREEN_WIDTH//4 + x_inc * len(self.discards)
-            x_inc = 20
+            x_inc = 15
             for card in self.discards.older_discards:
                 pg_card = PgCard(card)
                 pg_card.x = x_pos
@@ -254,7 +254,7 @@ class PgPlayer(Player):
         elif self.state == PgPlayerState.GAME_OVER:
             msg = "You" if self.score > self.game.players[1].score else "Your opponent"
             msg += " won! Click anywhere to play again"
-        font = pygame.font.Font(None, 20)
+        font = pygame.font.Font(None, 26)
         text = font.render(msg, True, WHITE)
         textRect = text.get_rect()
         textRect.y = INSTRUCTIONS_Y
@@ -278,7 +278,7 @@ class PgPlayer(Player):
         return num_cards_selected
 
     def display_new_game_message(self):
-        font = pygame.font.Font(None, 20)
+        font = pygame.font.Font(None, 26)
 
         y = CRIB_Y
         msgs = ["Welcome to Cribbage.py!",
@@ -298,7 +298,7 @@ class PgPlayer(Player):
             y += text.get_height() + GAP//2
 
     def display_cut_for_deal_message(self):
-        font = pygame.font.Font(None, 20)
+        font = pygame.font.Font(None, 26)
 
         y = SCORE_Y
         msgs = ["Cut for deal"]
@@ -318,7 +318,7 @@ class PgPlayer(Player):
             y += text.get_height() + GAP//2
     
     def display_scores(self):
-        font = pygame.font.Font(None, 20)
+        font = pygame.font.Font(None, 26)
         
         if self.score > 121:
             self.score = 121
