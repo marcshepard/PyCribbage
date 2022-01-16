@@ -32,10 +32,10 @@ from typing import Final
 from sys import argv
 from os import chdir, path, getcwd
 
-SCREEN_WIDTH : Final = 800
-SCREEN_HEIGHT : Final = 1000
+SCREEN_WIDTH : Final = 400
+SCREEN_HEIGHT : Final = 600
 CARD_HEIGHT : Final = SCREEN_HEIGHT//5
-GAP : Final = 50
+GAP : Final = 30
 SCORE_Y : Final = GAP//2
 DEALER_Y : Final = CARD_HEIGHT
 CRIB_Y : Final = CARD_HEIGHT * 2 + GAP
@@ -254,7 +254,7 @@ class PgPlayer(Player):
         elif self.state == PgPlayerState.GAME_OVER:
             msg = "You" if self.score > self.game.players[1].score else "Your opponent"
             msg += " won! Click anywhere to play again"
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.Font(None, 20)
         text = font.render(msg, True, WHITE)
         textRect = text.get_rect()
         textRect.y = INSTRUCTIONS_Y
@@ -278,7 +278,7 @@ class PgPlayer(Player):
         return num_cards_selected
 
     def display_new_game_message(self):
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.Font(None, 20)
 
         y = CRIB_Y
         msgs = ["Welcome to Cribbage.py!",
@@ -298,7 +298,7 @@ class PgPlayer(Player):
             y += text.get_height() + GAP//2
 
     def display_cut_for_deal_message(self):
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.Font(None, 20)
 
         y = SCORE_Y
         msgs = ["Cut for deal"]
@@ -318,7 +318,7 @@ class PgPlayer(Player):
             y += text.get_height() + GAP//2
     
     def display_scores(self):
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.Font(None, 20)
         
         if self.score > 121:
             self.score = 121
