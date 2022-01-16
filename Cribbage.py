@@ -93,6 +93,10 @@ class PgCard(Card):
     def centery(self):
         return self.y + CARD_HEIGHT//2
 
+    @property
+    def right(self):
+        return self.rect.right
+
 class PgPlayerState(Enum):
     NEW_GAME    = auto()    # New game started
     CUT_FOR_DEAL = auto()   # Cut for deal
@@ -180,25 +184,24 @@ class PgPlayer(Player):
     def display_crib(self):
         # Pile and cut card on the left   
         pgCard = PgCard(None)
-        pgCard.x = 10
         pgCard.y = CRIB_Y
         pgCard.blit(self.screen)
         if self.starter is not None and self.state != PgPlayerState.LAY_AWAY:
             pgCard = PgCard(self.starter)
-            pgCard.x = 20
+            pgCard.x = 15
             pgCard.y = CRIB_Y
             pgCard.blit(self.screen)
 
         # Discard pile (or crib during crib scoring) on the right
         if self.state == PgPlayerState.PLAY:
             x_inc = 30
-            card_num = 0
+            x_pos = pgCard.right + x_inc
             for card in self.discards:
                 pg_card = PgCard(card)
-                pg_card.x = SCREEN_WIDTH//4 + x_inc * card_num
+                pg_card.x = x_pos
                 pg_card.y = CRIB_Y
                 pg_card.blit(self.screen)
-                card_num += 1        
+                x_pos += x_inc
             
             x_pos = 2*SCREEN_WIDTH//3
             if x_pos < 10 + SCREEN_WIDTH//4 + x_inc * len(self.discards):
