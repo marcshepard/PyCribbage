@@ -32,7 +32,7 @@ from typing import Final
 from sys import argv
 from os import chdir, path, getcwd
 
-SCREEN_WIDTH : Final = 600
+SCREEN_WIDTH : Final = 800
 SCREEN_HEIGHT : Final = 800
 CARD_HEIGHT : Final = SCREEN_HEIGHT//5
 GAP : Final = 30
@@ -216,13 +216,13 @@ class PgPlayer(Player):
 
         elif self.state == PgPlayerState.SCORE_CRIB:
             x_inc = 150
-            card_num = 0
+            x_pos = pgCard.right + 30
             for card in self.crib:
                 pg_card = PgCard(card)
-                pg_card.x = SCREEN_WIDTH//4 + x_inc * card_num
+                pg_card.x = x_pos
                 pg_card.y = CRIB_Y
                 pg_card.blit(self.screen)
-                card_num += 1
+                x_pos += x_inc
                 
     def display_message(self):          
         # Any message for the user on what to do next below that
