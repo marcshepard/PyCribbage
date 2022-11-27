@@ -8,7 +8,7 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "Cribbage.py",
+            "program": "Cribbage.pyw",
             "console": "integratedTerminal"
         }
     ]
